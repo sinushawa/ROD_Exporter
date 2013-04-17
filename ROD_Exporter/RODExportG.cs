@@ -8,6 +8,7 @@ using SharpDX;
 using System.Reflection;
 using ROD_core;
 using ROD_core.Graphics.Assets;
+using System.Runtime.InteropServices;
 
 namespace RODExporter
 {
@@ -59,23 +60,40 @@ namespace RODExporter
             }
             return true;
         }
-        public static bool Bone_To()
+        public static bool Bone_To(int _frame)
         {
             RODExportG r = new RODExportG();
+            int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             List<IQuat> _rotations = new List<IQuat>();
             foreach (uint _handle in SelectedNodes)
             {
                 IINode _node = r.maxInterface.GetINodeByHandle(_handle);
-                IINode _parent = _node.ParentNode;
-                IMatrix3 _node_matrix = _node.GetNodeTM(10, r.maxGlobal.Interval.Create();
-                IMatrix3 _parent_matrix = _parent.GetNodeTM(10, null);
+                IInterval interval=r.maxGlobal.Interval.Create();
+                interval.SetInfinite();
+                IMatrix3 _node_matrix = _node.GetNodeTM(_frame*_ticks_per_frame, interval);
+                IMatrix3 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
                 _parent_matrix.Invert();
                 IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
                 IQuat _local_Rotation=r.maxGlobal.IdentQuat;
                 _local_Rotation.Set(_local_matrix);
+                IEulerAnglesValue euler = r.maxGlobal.EulerAnglesValue.Create(_local_Rotation);
+                float[] temp = new float[3];
+                for (int i = 0; i < euler.Angles.Length; i++ )
+                {
+                    float a = ROD_core.Mathematics.Math_helpers.ToDegrees(euler.Angles[i]);
+                    temp[i] = a;
+                }
+                Vector3 lisible = new Vector3(temp);
                 _rotations.Add(_local_Rotation);
             }
             return true;
+        }
+        static IntPtr IntPtrFromFloat(float f)
+        {
+            unsafe
+            {
+                return (*(IntPtr*)&f);
+            }
         }
 
         public RODExportG()
