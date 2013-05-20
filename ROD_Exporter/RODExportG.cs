@@ -19,6 +19,7 @@ namespace RODExporter
         public IInterface13 maxInterface;
 
         public static List<uint> SelectedNodes = new List<uint>();
+        public static Dictionary<IINode, ROD_core.Graphics.Animation.Joint> NodeJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
         public static Semantic semantic;
 
         public static void SetSemantic(Semantic _semantic)
@@ -63,30 +64,55 @@ namespace RODExporter
         public static bool Bone_To(int _frame)
         {
             RODExportG r = new RODExportG();
-            int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
-            List<IQuat> _rotations = new List<IQuat>();
+            
             foreach (uint _handle in SelectedNodes)
             {
                 IINode _node = r.maxInterface.GetINodeByHandle(_handle);
-                IInterval interval=r.maxGlobal.Interval.Create();
-                interval.SetInfinite();
-                IMatrix3 _node_matrix = _node.GetNodeTM(_frame*_ticks_per_frame, interval);
-                IMatrix3 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
-                _parent_matrix.Invert();
-                IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
-                IQuat _local_Rotation=r.maxGlobal.IdentQuat;
-                _local_Rotation.Set(_local_matrix);
-                IEulerAnglesValue euler = r.maxGlobal.EulerAnglesValue.Create(_local_Rotation);
-                float[] temp = new float[3];
-                for (int i = 0; i < euler.Angles.Length; i++ )
+                IIDerivedObject theObj = (IIDerivedObject)_node.ObjectRef;
+                for (int m = 0; m < theObj.Modifiers.Count; m++)
                 {
-                    float a = ROD_core.Mathematics.Math_helpers.ToDegrees(euler.Angles[i]);
-                    temp[i] = a;
+                    IModifier theModifier = theObj.GetModifier(m);
+                    if (theModifier.ClassName == "Skin")
+                    {
+                        IISkin iskin = (IISkin)theModifier.
+                    }
                 }
-                Vector3 lisible = new Vector3(temp);
-                _rotations.Add(_local_Rotation);
+                ROD_core.Mathematics.DualQuaternion DQ = GetBoneDQ(_node, _frame, r);
+                ROD_core.Graphics.Animation.Joint joint = new ROD_core.Graphics.Animation.Joint((int)_node.Id.PartB, _node.Name, null, DQ);
+                NodeJointDic.Add(_node, joint);
+                joint = BuildJoint(joint, _frame, r);
             }
             return true;
+        }
+        public static ROD_core.Graphics.Animation.Joint BuildJoint(ROD_core.Graphics.Animation.Joint joint, int _frame, RODExportG r)
+        {
+            IINode thisNode = NodeJointDic.Where(x => x.Value == joint).Select(y => y.Key).First();
+            int childrensNb = thisNode.NumberOfChildren;
+            for (int i = 0; i < childrensNb; i++)
+            {
+                IINode child = thisNode.GetChildNode(i);
+                ROD_core.Mathematics.DualQuaternion DQ = GetBoneDQ(child, _frame, r);
+                ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint((int)child.Id.PartB, child.Name, joint, DQ);
+                NodeJointDic.Add(child, newJoint);
+                joint.children.Add(BuildJoint(newJoint, _frame, r));
+            }
+            return joint;
+        }
+        public static ROD_core.Mathematics.DualQuaternion GetBoneDQ(IINode _node, int _frame, RODExportG r)
+        {
+            IInterval interval = r.maxGlobal.Interval.Create();
+            interval.SetInfinite();
+            int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
+            IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
+            IMatrix3 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
+            _parent_matrix.Invert();
+            IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
+            IPoint3 _translation = _local_matrix.Trans;
+            IQuat _local_Rotation = r.maxGlobal.IdentQuat;
+            _local_Rotation.Set(_local_matrix);
+            ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_translation.X, _translation.Y, _translation.Z));
+
+            return DQ;
         }
         static IntPtr IntPtrFromFloat(float f)
         {
@@ -294,7 +320,8 @@ namespace RODExporter
         public Vector2 UV;
         public Vector3 binormal;
         public Vector3 tangent;
-
+        public ROD_core.BoneIndices bonesID;
+        public Vector4 bonesWeights;
     }
 
 
