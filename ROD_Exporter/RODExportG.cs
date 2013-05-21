@@ -74,7 +74,7 @@ namespace RODExporter
                     IModifier theModifier = theObj.GetModifier(m);
                     if (theModifier.ClassName == "Skin")
                     {
-                        IISkin iskin = (IISkin)theModifier.
+                        IISkin iskin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
                     }
                 }
                 ROD_core.Mathematics.DualQuaternion DQ = GetBoneDQ(_node, _frame, r);
@@ -107,6 +107,10 @@ namespace RODExporter
             IMatrix3 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
             _parent_matrix.Invert();
             IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
+            IPoint3 trans = (IPoint3)r.maxGlobal.IPoint3NS.Create();
+            IQuat rot = r.maxGlobal.IdentQuat;
+            IPoint3 scal = (IPoint3)r.maxGlobal.IPoint3NS.Create();
+            r.maxGlobal.DecomposeMatrix(_local_matrix, trans, rot, scal);
             IPoint3 _translation = _local_matrix.Trans;
             IQuat _local_Rotation = r.maxGlobal.IdentQuat;
             _local_Rotation.Set(_local_matrix);
