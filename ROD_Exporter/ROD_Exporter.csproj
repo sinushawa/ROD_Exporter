@@ -7,8 +7,8 @@
     <ProjectGuid>{5551C07C-8850-4004-91CD-C1E086077A89}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>RODExporter</RootNamespace>
-    <AssemblyName>RODExporter</AssemblyName>
+    <RootNamespace>ROD_Exporter</RootNamespace>
+    <AssemblyName>ROD_Exporter</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
@@ -48,7 +48,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="RODExportG.cs" />
+    <Compile Include="ROD_ExportG.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

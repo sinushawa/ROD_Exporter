@@ -9,16 +9,19 @@ using System.Reflection;
 using ROD_core;
 using ROD_core.Graphics.Assets;
 using System.Runtime.InteropServices;
+using System.IO;
+using System.Diagnostics;
 
-namespace RODExporter
+namespace ROD_Exporter
 {
 
-    public class RODExportG
+    public class ROD_ExportG
     {
         public IGlobal maxGlobal;
         public IInterface13 maxInterface;
 
         public static List<uint> SelectedNodes = new List<uint>();
+        public static Dictionary<IINode, ROD_core.Graphics.Animation.Joint> NodeBJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
         public static Dictionary<IINode, ROD_core.Graphics.Animation.Joint> NodeJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
         public static Semantic semantic;
 
@@ -48,7 +51,7 @@ namespace RODExporter
 
         public static bool Export_To(string _filepath)
         {
-            RODExportG r = new RODExportG();
+            ROD_ExportG r = new ROD_ExportG();
             foreach (uint _handle in SelectedNodes)
             {
                 IINode _node = r.maxInterface.GetINodeByHandle(_handle);
@@ -63,7 +66,7 @@ namespace RODExporter
         }
         public static bool Bone_To(int _frame)
         {
-            RODExportG r = new RODExportG();
+            ROD_ExportG r = new ROD_ExportG();
             
             foreach (uint _handle in SelectedNodes)
             {
@@ -74,31 +77,74 @@ namespace RODExporter
                     IModifier theModifier = theObj.GetModifier(m);
                     if (theModifier.ClassName == "Skin")
                     {
-                        IISkin iskin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
+                        IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
+                        IINode _bone = _skin.GetBone(0);
+                        // create bindPose
+                        using (StreamWriter writer =  new StreamWriter("Bind.txt"))
+                        {
+                            NodeBJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
+                            ROD_core.Mathematics.DualQuaternion BDQ = GetBoneBindDQ(_bone, _skin, r, writer);
+                            ROD_core.Graphics.Animation.Joint Bjoint = new ROD_core.Graphics.Animation.Joint((int)_bone.GetHashCode(), _bone.Name, null, BDQ);
+                            NodeBJointDic.Add(_bone, Bjoint);
+                            Bjoint = BuildBind(Bjoint, _skin, r, writer);
+                        }
+
+                        using (StreamWriter writer = new StreamWriter("Pose2.txt"))
+                        {
+                            // create Pose at frame (_frame)
+                            NodeJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
+                            ROD_core.Mathematics.DualQuaternion DQ = GetBoneLocalDQ(_bone, _frame, r, writer);
+                            ROD_core.Graphics.Animation.Joint joint = new ROD_core.Graphics.Animation.Joint((int)_bone.GetHashCode(), _bone.Name, null, DQ);
+                            NodeJointDic.Add(_bone, joint);
+                            joint = BuildJoint(joint, _frame, r, writer);
+                        }
+                        IISkinContextData _skinContext = _skin.GetContextInterface(_node);
                     }
                 }
-                ROD_core.Mathematics.DualQuaternion DQ = GetBoneDQ(_node, _frame, r);
-                ROD_core.Graphics.Animation.Joint joint = new ROD_core.Graphics.Animation.Joint((int)_node.Id.PartB, _node.Name, null, DQ);
-                NodeJointDic.Add(_node, joint);
-                joint = BuildJoint(joint, _frame, r);
             }
             return true;
         }
-        public static ROD_core.Graphics.Animation.Joint BuildJoint(ROD_core.Graphics.Animation.Joint joint, int _frame, RODExportG r)
+        public static ROD_core.Graphics.Animation.Joint BuildBind(ROD_core.Graphics.Animation.Joint joint, IISkin _skin, ROD_ExportG r, StreamWriter writer)
+        {
+            IINode thisNode = NodeBJointDic.Where(x => x.Value == joint).Select(y => y.Key).First();
+            int childrensNb = thisNode.NumberOfChildren;
+            for (int i = 0; i < childrensNb; i++)
+            {
+                IINode child = thisNode.GetChildNode(i);
+                ROD_core.Mathematics.DualQuaternion DQ = GetBoneBindDQ(child, _skin, r, writer);
+                ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint((int)child.GetHashCode(), child.Name, joint, DQ);
+                NodeBJointDic.Add(child, newJoint);
+                joint.children.Add(BuildBind(newJoint, _skin, r, writer));
+            }
+            return joint;
+        }
+        public static ROD_core.Graphics.Animation.Joint BuildJoint(ROD_core.Graphics.Animation.Joint joint, int _frame, ROD_ExportG r, StreamWriter writer)
         {
             IINode thisNode = NodeJointDic.Where(x => x.Value == joint).Select(y => y.Key).First();
             int childrensNb = thisNode.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
                 IINode child = thisNode.GetChildNode(i);
-                ROD_core.Mathematics.DualQuaternion DQ = GetBoneDQ(child, _frame, r);
-                ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint((int)child.Id.PartB, child.Name, joint, DQ);
+                ROD_core.Mathematics.DualQuaternion DQ = GetBoneLocalDQ(child, _frame, r, writer);
+                ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint((int)child.GetHashCode(), child.Name, joint, DQ);
                 NodeJointDic.Add(child, newJoint);
-                joint.children.Add(BuildJoint(newJoint, _frame, r));
+                joint.children.Add(BuildJoint(newJoint, _frame, r, writer));
             }
             return joint;
         }
-        public static ROD_core.Mathematics.DualQuaternion GetBoneDQ(IINode _node, int _frame, RODExportG r)
+        public static ROD_core.Mathematics.DualQuaternion GetBoneBindDQ(IINode _node, IISkin _skin, ROD_ExportG r, StreamWriter writer)
+        {
+            IMatrix3 _matrix = r.maxGlobal.Matrix3.Create();
+            _skin.GetBoneInitTM(_node, _matrix, false);
+            IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
+            IQuat _local_Rotation = r.maxGlobal.Quat.Create();
+            IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
+            r.maxGlobal.DecomposeMatrix(_matrix, _local_Translation, _local_Rotation, _local_Scale);
+            writer.WriteLine(_node.Name + " Translation:X:" + _local_Translation.X.ToString() + " Y:" + _local_Translation.Y.ToString() + " Z:" + _local_Translation.Z.ToString() + " // Rotation:X:" + _local_Rotation.X.ToString()+ " Y:"+_local_Rotation.Y.ToString() + " Z:" +_local_Rotation.Z.ToString() + " W:" +_local_Rotation.W.ToString() );
+            ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
+            return DQ;
+        }
+        public static ROD_core.Mathematics.DualQuaternion GetBoneLocalDQ(IINode _node, int _frame, ROD_ExportG r, StreamWriter writer)
         {
             IInterval interval = r.maxGlobal.Interval.Create();
             interval.SetInfinite();
@@ -107,14 +153,17 @@ namespace RODExporter
             IMatrix3 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
             _parent_matrix.Invert();
             IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
-            IPoint3 trans = (IPoint3)r.maxGlobal.IPoint3NS.Create();
-            IQuat rot = r.maxGlobal.IdentQuat;
-            IPoint3 scal = (IPoint3)r.maxGlobal.IPoint3NS.Create();
-            r.maxGlobal.DecomposeMatrix(_local_matrix, trans, rot, scal);
-            IPoint3 _translation = _local_matrix.Trans;
-            IQuat _local_Rotation = r.maxGlobal.IdentQuat;
-            _local_Rotation.Set(_local_matrix);
-            ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_translation.X, _translation.Y, _translation.Z));
+            IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
+            IQuat _local_Rotation = r.maxGlobal.Quat.Create();
+            IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
+            r.maxGlobal.DecomposeMatrix(_local_matrix, _local_Translation, _local_Rotation, _local_Scale);
+            writer.WriteLine(_node.Name + " Translation:X:" + _local_Translation.X.ToString() + " Y:" + _local_Translation.Y.ToString() + " Z:" + _local_Translation.Z.ToString() + " // Rotation:X:" + _local_Rotation.X.ToString() + " Y:" + _local_Rotation.Y.ToString() + " Z:" + _local_Rotation.Z.ToString() + " W:" + _local_Rotation.W.ToString());
+            ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
+            ROD_core.Graphics.Animation.Joint _bindJoint = NodeBJointDic.Where(x => x.Key.Name == _node.Name).Select(x => x.Value).First();
+            ROD_core.Mathematics.DualQuaternion _bindConjuguate = ROD_core.Mathematics.DualQuaternion.Conjugate(_bindJoint.localRotationTranslation);
+            DQ = DQ * _bindConjuguate;
+            Debug.WriteLine(ROD_core.Mathematics.DualQuaternion.GetTranslation(DQ));
+            writer.WriteLine(_node.Name + " Real:X:" + DQ.real.X.ToString() + " Y:" + DQ.real.Y.ToString() + " Z:" + DQ.real.Z.ToString() + " W:" + DQ.real.W.ToString() + " // Dual:X:" + DQ.dual.X.ToString() + " Y:" + DQ.dual.Y.ToString() + " Z:" + DQ.dual.Z.ToString() + " W:" + DQ.dual.W.ToString());
 
             return DQ;
         }
@@ -126,7 +175,7 @@ namespace RODExporter
             }
         }
 
-        public RODExportG()
+        public ROD_ExportG()
         {
             maxGlobal = Autodesk.Max.GlobalInterface.Instance;
             maxInterface = maxGlobal.COREInterface13;
