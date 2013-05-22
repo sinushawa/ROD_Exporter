@@ -80,59 +80,84 @@ namespace ROD_Exporter
                         IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
                         IINode _bone = _skin.GetBone(0);
                         // create bindPose
-                        using (StreamWriter writer =  new StreamWriter("Bind.txt"))
-                        {
-                            NodeBJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
-                            ROD_core.Mathematics.DualQuaternion BDQ = GetBoneBindDQ(_bone, _skin, r, writer);
-                            ROD_core.Graphics.Animation.Joint Bjoint = new ROD_core.Graphics.Animation.Joint((int)_bone.GetHashCode(), _bone.Name, null, BDQ);
-                            NodeBJointDic.Add(_bone, Bjoint);
-                            Bjoint = BuildBind(Bjoint, _skin, r, writer);
-                        }
-
-                        using (StreamWriter writer = new StreamWriter("Pose2.txt"))
-                        {
-                            // create Pose at frame (_frame)
-                            NodeJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
-                            ROD_core.Mathematics.DualQuaternion DQ = GetBoneLocalDQ(_bone, _frame, r, writer);
-                            ROD_core.Graphics.Animation.Joint joint = new ROD_core.Graphics.Animation.Joint((int)_bone.GetHashCode(), _bone.Name, null, DQ);
-                            NodeJointDic.Add(_bone, joint);
-                            joint = BuildJoint(joint, _frame, r, writer);
-                        }
+                        NodeBJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
+                        ROD_core.Mathematics.DualQuaternion BDQ = GetBoneBindDQ(_bone, _skin, r);
+                        ROD_core.Graphics.Animation.Joint Bjoint = new ROD_core.Graphics.Animation.Joint((int)_bone.GetHashCode(), _bone.Name, null, BDQ);
+                        NodeBJointDic.Add(_bone, Bjoint);
+                        Bjoint = BuildBind(Bjoint, _skin, r);
+                        // create Pose at frame (_frame)
+                        NodeJointDic = new Dictionary<IINode, ROD_core.Graphics.Animation.Joint>();
+                        ROD_core.Mathematics.DualQuaternion DQ = GetBoneLocalDQ(_bone, _frame, r);
+                        ROD_core.Graphics.Animation.Joint joint = new ROD_core.Graphics.Animation.Joint((int)_bone.GetHashCode(), _bone.Name, null, DQ);
+                        NodeJointDic.Add(_bone, joint);
+                        joint = BuildJoint(joint, _frame, r);
                         IISkinContextData _skinContext = _skin.GetContextInterface(_node);
+                        ROD_core.Graphics.Animation.Joint jointT = JointTest(joint, _frame, r);
                     }
                 }
             }
             return true;
         }
-        public static ROD_core.Graphics.Animation.Joint BuildBind(ROD_core.Graphics.Animation.Joint joint, IISkin _skin, ROD_ExportG r, StreamWriter writer)
+        public static ROD_core.Graphics.Animation.Joint BuildBind(ROD_core.Graphics.Animation.Joint joint, IISkin _skin, ROD_ExportG r)
         {
             IINode thisNode = NodeBJointDic.Where(x => x.Value == joint).Select(y => y.Key).First();
             int childrensNb = thisNode.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
                 IINode child = thisNode.GetChildNode(i);
-                ROD_core.Mathematics.DualQuaternion DQ = GetBoneBindDQ(child, _skin, r, writer);
+                ROD_core.Mathematics.DualQuaternion DQ = GetBoneBindDQ(child, _skin, r);
                 ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint((int)child.GetHashCode(), child.Name, joint, DQ);
                 NodeBJointDic.Add(child, newJoint);
-                joint.children.Add(BuildBind(newJoint, _skin, r, writer));
+                joint.children.Add(BuildBind(newJoint, _skin, r));
             }
             return joint;
         }
-        public static ROD_core.Graphics.Animation.Joint BuildJoint(ROD_core.Graphics.Animation.Joint joint, int _frame, ROD_ExportG r, StreamWriter writer)
+        public static ROD_core.Graphics.Animation.Joint BuildJoint(ROD_core.Graphics.Animation.Joint joint, int _frame, ROD_ExportG r)
         {
             IINode thisNode = NodeJointDic.Where(x => x.Value == joint).Select(y => y.Key).First();
             int childrensNb = thisNode.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
                 IINode child = thisNode.GetChildNode(i);
-                ROD_core.Mathematics.DualQuaternion DQ = GetBoneLocalDQ(child, _frame, r, writer);
+                ROD_core.Mathematics.DualQuaternion DQ = GetBoneLocalDQ(child, _frame, r);
                 ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint((int)child.GetHashCode(), child.Name, joint, DQ);
                 NodeJointDic.Add(child, newJoint);
-                joint.children.Add(BuildJoint(newJoint, _frame, r, writer));
+                joint.children.Add(BuildJoint(newJoint, _frame, r));
             }
             return joint;
         }
-        public static ROD_core.Mathematics.DualQuaternion GetBoneBindDQ(IINode _node, IISkin _skin, ROD_ExportG r, StreamWriter writer)
+        public static ROD_core.Graphics.Animation.Joint JointTest(ROD_core.Graphics.Animation.Joint joint, int _frame, ROD_ExportG r)
+        {
+            int childrensNb = joint.children.Count;
+            for (int i = 0; i < childrensNb; i++)
+            {
+                Stack<ROD_core.Mathematics.DualQuaternion> jointStack = new Stack<ROD_core.Mathematics.DualQuaternion>();
+                StackLocalTM(joint.children[i], jointStack);
+                ROD_core.Mathematics.DualQuaternion DQ = AggregateLocalTM(jointStack);
+                ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint(joint.children[i].id, joint.children[i].name, joint, DQ);
+                joint.children.Add(JointTest(joint.children[i], _frame, r));
+            }
+            return joint;
+        }
+        public static void StackLocalTM(ROD_core.Graphics.Animation.Joint joint, Stack<ROD_core.Mathematics.DualQuaternion> jointStack)
+        {
+            jointStack.Push(joint.localRotationTranslation);
+            if (joint.parent != null)
+            {
+                StackLocalTM(joint.parent, jointStack);
+            }
+        }
+        public static ROD_core.Mathematics.DualQuaternion AggregateLocalTM(Stack<ROD_core.Mathematics.DualQuaternion> jointStack)
+        {
+            ROD_core.Mathematics.DualQuaternion DQ = jointStack.Pop();
+            for (int i = 0; i < jointStack.Count; i++)
+            {
+                DQ = jointStack.Pop() * DQ;
+            }
+            return DQ;
+        }
+
+        public static ROD_core.Mathematics.DualQuaternion GetBoneBindDQ(IINode _node, IISkin _skin, ROD_ExportG r)
         {
             IMatrix3 _matrix = r.maxGlobal.Matrix3.Create();
             _skin.GetBoneInitTM(_node, _matrix, false);
@@ -140,30 +165,32 @@ namespace ROD_Exporter
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
             r.maxGlobal.DecomposeMatrix(_matrix, _local_Translation, _local_Rotation, _local_Scale);
-            writer.WriteLine(_node.Name + " Translation:X:" + _local_Translation.X.ToString() + " Y:" + _local_Translation.Y.ToString() + " Z:" + _local_Translation.Z.ToString() + " // Rotation:X:" + _local_Rotation.X.ToString()+ " Y:"+_local_Rotation.Y.ToString() + " Z:" +_local_Rotation.Z.ToString() + " W:" +_local_Rotation.W.ToString() );
             ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
             return DQ;
         }
-        public static ROD_core.Mathematics.DualQuaternion GetBoneLocalDQ(IINode _node, int _frame, ROD_ExportG r, StreamWriter writer)
+        public static ROD_core.Mathematics.DualQuaternion GetBoneLocalDQ(IINode _node, int _frame, ROD_ExportG r)
         {
             IInterval interval = r.maxGlobal.Interval.Create();
             interval.SetInfinite();
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
-            IMatrix3 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
+            IMatrix3 _parent_matrix = r.maxGlobal.Matrix3.Create();
+            _parent_matrix.IdentityMatrix();
+            if ((NodeBJointDic.Any(x => x.Key.Name == _node.ParentNode.Name)))
+            {
+                _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
+            }
             _parent_matrix.Invert();
             IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
             r.maxGlobal.DecomposeMatrix(_local_matrix, _local_Translation, _local_Rotation, _local_Scale);
-            writer.WriteLine(_node.Name + " Translation:X:" + _local_Translation.X.ToString() + " Y:" + _local_Translation.Y.ToString() + " Z:" + _local_Translation.Z.ToString() + " // Rotation:X:" + _local_Rotation.X.ToString() + " Y:" + _local_Rotation.Y.ToString() + " Z:" + _local_Rotation.Z.ToString() + " W:" + _local_Rotation.W.ToString());
             ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
             ROD_core.Graphics.Animation.Joint _bindJoint = NodeBJointDic.Where(x => x.Key.Name == _node.Name).Select(x => x.Value).First();
             ROD_core.Mathematics.DualQuaternion _bindConjuguate = ROD_core.Mathematics.DualQuaternion.Conjugate(_bindJoint.localRotationTranslation);
-            DQ = DQ * _bindConjuguate;
+            DQ = _bindConjuguate * DQ;
             Debug.WriteLine(ROD_core.Mathematics.DualQuaternion.GetTranslation(DQ));
-            writer.WriteLine(_node.Name + " Real:X:" + DQ.real.X.ToString() + " Y:" + DQ.real.Y.ToString() + " Z:" + DQ.real.Z.ToString() + " W:" + DQ.real.W.ToString() + " // Dual:X:" + DQ.dual.X.ToString() + " Y:" + DQ.dual.Y.ToString() + " Z:" + DQ.dual.Z.ToString() + " W:" + DQ.dual.W.ToString());
 
             return DQ;
         }
@@ -270,26 +297,26 @@ namespace ROD_Exporter
                     else
                     {
                      */
-                        VertexDivided _newVertex = new VertexDivided();
-                        _newVertex.pos = verticesFullData[_vertex].pos;
-                        
-                        _newVertex.UV.X = verticesFullData[_vertex].faceInfo.Where(x => x.ID == _faceID).FirstOrDefault().UV.X;
-                        _newVertex.UV.Y = 1-verticesFullData[_vertex].faceInfo.Where(x => x.ID == _faceID).FirstOrDefault().UV.Y;
-                        Vector3 _normal_aggreagate = new Vector3(0, 0, 0);
-                        Vector3 _tangent_aggreagate = new Vector3(0, 0, 0);
-                        foreach (PerFaceInfo _FI in unitedVertex)
-                        {
-                            _normal_aggreagate += _FI.normal;
-                            _tangent_aggreagate += _FI.tangent;
-                        }
-                        _normal_aggreagate.Normalize();
-                        _tangent_aggreagate.Normalize();
-                        _newVertex.normal = _normal_aggreagate;
-                        _newVertex.tangent = _tangent_aggreagate;
-                        _newVertex.binormal = Vector3.Cross(_normal_aggreagate, _tangent_aggreagate);
-                        //vertexTranslation.Add(facesFullData[_faceID].SMG, VertexBuffer.Count);
-                        IndexBuffer.Add(VertexBuffer.Count);
-                        VertexBuffer.Add(_newVertex);
+                    VertexDivided _newVertex = new VertexDivided();
+                    _newVertex.pos = verticesFullData[_vertex].pos;
+
+                    _newVertex.UV.X = verticesFullData[_vertex].faceInfo.Where(x => x.ID == _faceID).FirstOrDefault().UV.X;
+                    _newVertex.UV.Y = 1 - verticesFullData[_vertex].faceInfo.Where(x => x.ID == _faceID).FirstOrDefault().UV.Y;
+                    Vector3 _normal_aggreagate = new Vector3(0, 0, 0);
+                    Vector3 _tangent_aggreagate = new Vector3(0, 0, 0);
+                    foreach (PerFaceInfo _FI in unitedVertex)
+                    {
+                        _normal_aggreagate += _FI.normal;
+                        _tangent_aggreagate += _FI.tangent;
+                    }
+                    _normal_aggreagate.Normalize();
+                    _tangent_aggreagate.Normalize();
+                    _newVertex.normal = _normal_aggreagate;
+                    _newVertex.tangent = _tangent_aggreagate;
+                    _newVertex.binormal = Vector3.Cross(_normal_aggreagate, _tangent_aggreagate);
+                    //vertexTranslation.Add(facesFullData[_faceID].SMG, VertexBuffer.Count);
+                    IndexBuffer.Add(VertexBuffer.Count);
+                    VertexBuffer.Add(_newVertex);
                     //}
                 }
             }
@@ -297,14 +324,14 @@ namespace ROD_Exporter
             mesh._vertexStream = new VertexStream(VertexBuffer.Count, true, true, _semantic);
             foreach (int id in IndexBuffer)
             {
-                
+
                 UInt16 _id = Convert.ToUInt16(id);
                 VertexDivided res = VertexBuffer[_id];
                 mesh._indexStream.WriteIndex(_id);
             }
             foreach (VertexDivided vd in VertexBuffer)
             {
-                if(mesh._boundingBox.Minimum == null)
+                if (mesh._boundingBox.Minimum == null)
                 {
                     mesh._boundingBox.Minimum = new Vector3(vd.pos.X, vd.pos.Y, vd.pos.Z);
                     mesh._boundingBox.Maximum = new Vector3(vd.pos.X, vd.pos.Y, vd.pos.Z);
@@ -378,7 +405,7 @@ namespace ROD_Exporter
     }
 
 
-    
+
 
     public static class maxHelper
     {
