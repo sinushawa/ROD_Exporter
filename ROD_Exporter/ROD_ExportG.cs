@@ -173,12 +173,15 @@ namespace ROD_Exporter
 
         public static ROD_core.Mathematics.DualQuaternion GetBoneBindDQ(IINode _node, IISkin _skin, ROD_ExportG r)
         {
+            IInterval interval = r.maxGlobal.Interval.Create();
+            interval.SetInfinite();
             IMatrix3 _matrix = r.maxGlobal.Matrix3.Create();
             _skin.GetBoneInitTM(_node, _matrix, false);
+            IMatrix3 _node_matrix = _node.GetNodeTM(0, interval);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
-            r.maxGlobal.DecomposeMatrix(_matrix, _local_Translation, _local_Rotation, _local_Scale);
+            r.maxGlobal.DecomposeMatrix(_node_matrix, _local_Translation, _local_Rotation, _local_Scale);
             ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
             return DQ;
         }
@@ -188,27 +191,17 @@ namespace ROD_Exporter
             interval.SetInfinite();
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
-            Matrix _nodeSMatrix = _node_matrix.convertTo();
             IMatrix3 _parent_matrix = r.maxGlobal.Matrix3.Create();
             _parent_matrix.IdentityMatrix();
             if ((NodeBJointDic.Any(x => x.Key.Name == _node.ParentNode.Name)))
             {
                 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
             }
-            Matrix _parentSMatrix = _parent_matrix.convertTo();
             _parent_matrix.Invert();
-            _parentSMatrix.Invert();
-            Matrix _localSMatrix = _nodeSMatrix * _parentSMatrix;
-            IMatrix3 _local_matrix = _parent_matrix.Multiply(_node_matrix);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
-            Vector3 _localSTranslation = new Vector3();
-            Quaternion _localSRotation = new Quaternion();
-            Vector3 _localSScale = new Vector3();
-            _localSMatrix.Decompose(out _localSScale, out _localSRotation, out _localSTranslation);
-            r.maxGlobal.DecomposeMatrix(_local_matrix, _local_Translation, _local_Rotation, _local_Scale);
-            _local_matrix = _node_matrix.Multiply(_parent_matrix);
+            IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
             r.maxGlobal.DecomposeMatrix(_local_matrix, _local_Translation, _local_Rotation, _local_Scale);
             ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
             /*
