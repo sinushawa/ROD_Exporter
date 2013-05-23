@@ -92,7 +92,8 @@ namespace ROD_Exporter
                         NodeJointDic.Add(_bone, joint);
                         joint = BuildJoint(joint, _frame, r);
                         IISkinContextData _skinContext = _skin.GetContextInterface(_node);
-                        ROD_core.Graphics.Animation.Joint jointT = JointTest(joint, _frame, r);
+                        ROD_core.Graphics.Animation.Joint jointT = JointTest(joint, null, _frame, r);
+                        ROD_core.Graphics.Animation.Joint jointFullCircle = JointFullCircle(jointT, Bjoint, null, _frame, r);
                     }
                 }
             }
@@ -126,18 +127,30 @@ namespace ROD_Exporter
             }
             return joint;
         }
-        public static ROD_core.Graphics.Animation.Joint JointTest(ROD_core.Graphics.Animation.Joint joint, int _frame, ROD_ExportG r)
+        public static ROD_core.Graphics.Animation.Joint JointTest(ROD_core.Graphics.Animation.Joint joint, ROD_core.Graphics.Animation.Joint _parent, int _frame, ROD_ExportG r)
         {
+            Stack<ROD_core.Mathematics.DualQuaternion> jointStack = new Stack<ROD_core.Mathematics.DualQuaternion>();
+            ROD_core.Graphics.Animation.Joint TJoint = new ROD_core.Graphics.Animation.Joint(joint.id, joint.name, _parent, joint.localRotationTranslation);
+            StackLocalTM(TJoint, jointStack);
+            ROD_core.Mathematics.DualQuaternion DQ = AggregateLocalTM(jointStack);
+            TJoint.localRotationTranslation = DQ;
             int childrensNb = joint.children.Count;
             for (int i = 0; i < childrensNb; i++)
             {
-                Stack<ROD_core.Mathematics.DualQuaternion> jointStack = new Stack<ROD_core.Mathematics.DualQuaternion>();
-                StackLocalTM(joint.children[i], jointStack);
-                ROD_core.Mathematics.DualQuaternion DQ = AggregateLocalTM(jointStack);
-                ROD_core.Graphics.Animation.Joint newJoint = new ROD_core.Graphics.Animation.Joint(joint.children[i].id, joint.children[i].name, joint, DQ);
-                joint.children.Add(JointTest(joint.children[i], _frame, r));
+                TJoint.children.Add(JointTest(joint.children[i], TJoint, _frame, r));
             }
-            return joint;
+            return TJoint;
+        }
+        public static ROD_core.Graphics.Animation.Joint JointFullCircle(ROD_core.Graphics.Animation.Joint Ljoint, ROD_core.Graphics.Animation.Joint Bjoint, ROD_core.Graphics.Animation.Joint _parent, int _frame, ROD_ExportG r)
+        {
+            ROD_core.Mathematics.DualQuaternion DQ = Ljoint.localRotationTranslation * ROD_core.Mathematics.DualQuaternion.Conjugate(Bjoint.localRotationTranslation);
+            ROD_core.Graphics.Animation.Joint TJoint = new ROD_core.Graphics.Animation.Joint(Ljoint.id, Ljoint.name, _parent, DQ);
+            int childrensNb = Ljoint.children.Count;
+            for (int i = 0; i < childrensNb; i++)
+            {
+                TJoint.children.Add(JointFullCircle(Ljoint.children[i], Bjoint.children[i], TJoint, _frame, r));
+            }
+            return TJoint;
         }
         public static void StackLocalTM(ROD_core.Graphics.Animation.Joint joint, Stack<ROD_core.Mathematics.DualQuaternion> jointStack)
         {
@@ -152,7 +165,8 @@ namespace ROD_Exporter
             ROD_core.Mathematics.DualQuaternion DQ = jointStack.Pop();
             for (int i = 0; i < jointStack.Count; i++)
             {
-                DQ = jointStack.Pop() * DQ;
+                ROD_core.Mathematics.DualQuaternion LDQ = jointStack.Pop();
+                DQ = LDQ * DQ;
             }
             return DQ;
         }
@@ -174,24 +188,35 @@ namespace ROD_Exporter
             interval.SetInfinite();
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
+            Matrix _nodeSMatrix = _node_matrix.convertTo();
             IMatrix3 _parent_matrix = r.maxGlobal.Matrix3.Create();
             _parent_matrix.IdentityMatrix();
             if ((NodeBJointDic.Any(x => x.Key.Name == _node.ParentNode.Name)))
             {
                 _parent_matrix = _node.GetParentTM(_frame * _ticks_per_frame);
             }
+            Matrix _parentSMatrix = _parent_matrix.convertTo();
             _parent_matrix.Invert();
-            IMatrix3 _local_matrix = _node_matrix.Multiply(_parent_matrix);
+            _parentSMatrix.Invert();
+            Matrix _localSMatrix = _nodeSMatrix * _parentSMatrix;
+            IMatrix3 _local_matrix = _parent_matrix.Multiply(_node_matrix);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
+            Vector3 _localSTranslation = new Vector3();
+            Quaternion _localSRotation = new Quaternion();
+            Vector3 _localSScale = new Vector3();
+            _localSMatrix.Decompose(out _localSScale, out _localSRotation, out _localSTranslation);
+            r.maxGlobal.DecomposeMatrix(_local_matrix, _local_Translation, _local_Rotation, _local_Scale);
+            _local_matrix = _node_matrix.Multiply(_parent_matrix);
             r.maxGlobal.DecomposeMatrix(_local_matrix, _local_Translation, _local_Rotation, _local_Scale);
             ROD_core.Mathematics.DualQuaternion DQ = new ROD_core.Mathematics.DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
+            /*
             ROD_core.Graphics.Animation.Joint _bindJoint = NodeBJointDic.Where(x => x.Key.Name == _node.Name).Select(x => x.Value).First();
             ROD_core.Mathematics.DualQuaternion _bindConjuguate = ROD_core.Mathematics.DualQuaternion.Conjugate(_bindJoint.localRotationTranslation);
             DQ = _bindConjuguate * DQ;
             Debug.WriteLine(ROD_core.Mathematics.DualQuaternion.GetTranslation(DQ));
-
+            */
             return DQ;
         }
         static IntPtr IntPtrFromFloat(float f)
@@ -417,6 +442,11 @@ namespace ROD_Exporter
         public static Vector2 convertToVector2(this IPoint3 _input)
         {
             Vector2 _output = new Vector2(_input.X, _input.Y);
+            return _output;
+        }
+        public static Matrix convertTo(this IMatrix3 _input)
+        {
+            Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, 0, 0, 0, 1);
             return _output;
         }
     }
