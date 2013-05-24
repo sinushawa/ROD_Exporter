@@ -24,6 +24,7 @@ namespace ROD_Exporter
 
         public static List<uint> SelectedNodes = new List<uint>();
         public static Semantic semantic;
+        public static Joint bindCompare;
 
         public static void SetSemantic(Semantic _semantic)
         {
@@ -97,6 +98,7 @@ namespace ROD_Exporter
                         IINode _bone = _skin.GetBone(0);
                         // create bindPose
                         Joint Bjoint = BuildBind(_bone, null, r);
+                        bindCompare = Bjoint;
                         // create Pose at frame (_frame)
                         Joint joint = BuildJoint(_bone, null, Bjoint, 10, r);
                         
@@ -140,6 +142,8 @@ namespace ROD_Exporter
             Stack<DualQuaternion> jointStack = new Stack<DualQuaternion>();
             Joint TJoint = new Joint(joint.id, joint.name, _parent, joint.localRotationTranslation);
             StackLocalTM(TJoint, jointStack);
+            var tsTAKy = TJoint.GetParentEnumerable().Select(x => new { Name = x.name, DQ = x.localRotationTranslation }).ToList();
+            var tsTak = TJoint.GetDepthEnumerable().Select(x => new { Name = x.name, DQ = x.localRotationTranslation }).ToList();
             DualQuaternion DQ = AggregateLocalTM(jointStack);
             TJoint.localRotationTranslation = DQ;
             int childrensNb = joint.children.Count;
