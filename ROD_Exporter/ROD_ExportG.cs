@@ -139,12 +139,8 @@ namespace ROD_Exporter
         }
         public static ROD_core.Graphics.Animation.Joint JointTest(Joint joint, Joint _parent, int _frame, ROD_ExportG r)
         {
-            Stack<DualQuaternion> jointStack = new Stack<DualQuaternion>();
             Joint TJoint = new Joint(joint.id, joint.name, _parent, joint.localRotationTranslation);
-            StackLocalTM(TJoint, jointStack);
-            var tsTAKy = TJoint.GetParentEnumerable().Select(x => new { Name = x.name, DQ = x.localRotationTranslation }).ToList();
-            var tsTak = TJoint.GetDepthEnumerable().Select(x => new { Name = x.name, DQ = x.localRotationTranslation }).ToList();
-            DualQuaternion DQ = AggregateLocalTM(jointStack);
+            DualQuaternion DQ = AggregateLocalTM(TJoint);
             TJoint.localRotationTranslation = DQ;
             int childrensNb = joint.children.Count;
             for (int i = 0; i < childrensNb; i++)
@@ -164,22 +160,15 @@ namespace ROD_Exporter
             }
             return TJoint;
         }
-        public static void StackLocalTM(Joint joint, Stack<DualQuaternion> jointStack)
+        public static DualQuaternion AggregateLocalTM(Joint joint)
         {
-            jointStack.Push(joint.localRotationTranslation);
-            if (joint.parent != null)
+            DualQuaternion DQ = DualQuaternion.Identity;
+            if(joint.parent != null)
             {
-                StackLocalTM(joint.parent, jointStack);
+                DQ = joint.parent.localRotationTranslation;
             }
-        }
-        public static DualQuaternion AggregateLocalTM(Stack<DualQuaternion> jointStack)
-        {
-            DualQuaternion DQ = jointStack.Pop();
-            for (int i = 0; i < jointStack.Count; i++)
-            {
-                DualQuaternion LDQ = jointStack.Pop();
-                DQ = LDQ * DQ;
-            }
+            DualQuaternion LDQ = joint.localRotationTranslation;
+            DQ = LDQ * DQ;
             return DQ;
         }
 
