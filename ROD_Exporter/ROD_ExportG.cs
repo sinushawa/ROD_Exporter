@@ -24,25 +24,11 @@ namespace ROD_Exporter
 
         public static List<uint> SelectedNodes = new List<uint>();
         public static Semantic semantic;
-        public static Joint bindCompare;
 
-        public static void SetSemantic(Semantic _semantic)
+        public ROD_ExportG()
         {
-            semantic = _semantic;
-        }
-        public static void SetSemantic(string _semantic_string)
-        {
-            List<string> semantic_Keywords = _semantic_string.Split(' ').ToList();
-            List<Semantic> list_keywords = new List<Semantic>();
-            foreach (string keyword in semantic_Keywords)
-            {
-                list_keywords.Add((Semantic)Enum.Parse(typeof(Semantic), keyword));
-            }
-            semantic = list_keywords[0];
-            for (int i = 1; i < list_keywords.Count; i++)
-            {
-                semantic |= list_keywords[i];
-            }
+            maxGlobal = Autodesk.Max.GlobalInterface.Instance;
+            maxInterface = maxGlobal.COREInterface13;
         }
 
         public static void SelectNode(uint _handle)
@@ -55,12 +41,26 @@ namespace ROD_Exporter
             ROD_ExportG r = new ROD_ExportG();
             foreach (uint _handle in SelectedNodes)
             {
+                
                 IINode _node = r.maxInterface.GetINodeByHandle(_handle);
-                IObject _gObject = _node.ObjectRef;
-                ITriObject _mObject = (ITriObject)_gObject;
+                IIDerivedObject _gObject = (IIDerivedObject)_node.ObjectRef;
+                IClass_ID classID = r.maxGlobal.Class_ID.Create((uint)BuiltInClassIDA.TRIOBJ_CLASS_ID, 0);
+                ITriObject _mObject = (ITriObject)_gObject.ObjRef.ConvertToType(0, classID);
                 IMesh _mMesh = _mObject.Mesh;
                 _mMesh.BuildNormals();
-                ComputeVertexData(_mMesh, semantic, _filepath);
+                IIDerivedObject theObj = (IIDerivedObject)_node.ObjectRef;
+                for (int m = 0; m < theObj.Modifiers.Count; m++)
+                {
+                    IModifier theModifier = theObj.GetModifier(m);
+                    if (theModifier.ClassName == "Skin")
+                    {
+
+                        IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
+                        IISkinContextData _skinContext = _skin.GetContextInterface(_node);
+                        ComputeVertexData(_mMesh, _skinContext, semantic, _filepath);
+                    }
+                }
+                
 
             }
             return true;
@@ -78,33 +78,35 @@ namespace ROD_Exporter
                     IModifier theModifier = theObj.GetModifier(m);
                     if (theModifier.ClassName == "Skin")
                     {
-                        Quaternion first = Quaternion.RotationAxis(new Vector3(0, 0, 1), ROD_core.Mathematics.Math_helpers.ToRadians(30));
-                        DualQuaternion firstD = new DualQuaternion(first, new Vector3(1, 0, 0));
-                        Quaternion second = Quaternion.RotationAxis(new Vector3(0, 1, 0), ROD_core.Mathematics.Math_helpers.ToRadians(30));
-                        DualQuaternion secondD = new DualQuaternion(second, new Vector3(1, 0, 0));
-                        Quaternion third = Quaternion.RotationAxis(new Vector3(0, 0, 1), ROD_core.Mathematics.Math_helpers.ToRadians(30));
-                        DualQuaternion thirdD = new DualQuaternion(third, new Vector3(0, 0, 0));
-
-                        Quaternion total = second * first;
-                        total = third * total;
-                        DualQuaternion totalD = secondD * firstD;
-                        totalD = thirdD * totalD;
-
-                        DualQuaternion secondDW = totalD * DualQuaternion.Conjugate(thirdD);
-                        Quaternion secondW = second * first;
-
 
                         IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
                         IINode _bone = _skin.GetBone(0);
                         // create bindPose
                         Joint Bjoint = BuildBind(_bone, null, r);
-                        bindCompare = Bjoint;
+                        List<Joint> joints = Bjoint.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.Breadth_first).ToList();
+                        for (int i = 0; i < joints.Count; i++)
+                        {
+                            joints[i].id = i;
+                        }
                         // create Pose at frame (_frame)
                         Joint joint = BuildJoint(_bone, null, Bjoint, 10, r);
+                        List<Joint> jointsJ = Bjoint.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.Breadth_first).ToList();
+                        for (int i = 0; i < jointsJ.Count; i++)
+                        {
+                            jointsJ[i].id = i;
+                        }
+
+                        ROD_core.Graphics.Animation.Pose Tpose = new ROD_core.Graphics.Animation.Pose("TPose", Bjoint);
+                        Tpose.saveToFile("test.pos");
+
+                        ROD_core.Graphics.Animation.Pose Tpose2 = ROD_core.Graphics.Animation.Pose.createFromFile("test.pos");
                         
                         IISkinContextData _skinContext = _skin.GetContextInterface(_node);
+
+                        /* // this part was to test the correctness of the creation of the local transforms
                         Joint jointT = JointTest(joint, null, _frame, r);
                         Joint jointFullCircle = JointFullCircle(jointT, Bjoint, null, _frame, r);
+                         * */
                     }
                 }
             }
@@ -113,7 +115,7 @@ namespace ROD_Exporter
         public static Joint BuildBind(IINode _node, Joint _parent, ROD_ExportG r)
         {
             DualQuaternion DQ = GetBoneBindDQ(_node, r);
-            Joint joint = new Joint((int)_node.GetHashCode(), _node.Name, _parent, DQ);
+            Joint joint = new Joint(0, _node.Name, _parent, DQ);
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
@@ -126,10 +128,10 @@ namespace ROD_Exporter
             Joint _bindParent = null;
             if(_parent != null)
             {
-                _bindParent = _bindPose.GetDepthEnumerable().Where(x => x.name == _parent.name).First();
+                _bindParent = _bindPose.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.Breadth_first).Where(x => x.name == _parent.name).First();
             }
             DualQuaternion DQ = GetBoneLocalDQ(_node, _bindParent, _frame, r);
-            Joint joint = new Joint((int)_node.GetHashCode(), _node.Name, _parent, DQ);
+            Joint joint = new Joint(0, _node.Name, _parent, DQ);
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
@@ -201,21 +203,27 @@ namespace ROD_Exporter
             }
             return DQ;
         }
-        static IntPtr IntPtrFromFloat(float f)
+        
+        public static void SetSemantic(Semantic _semantic)
         {
-            unsafe
+            semantic = _semantic;
+        }
+        public static void SetSemantic(string _semantic_string)
+        {
+            List<string> semantic_Keywords = _semantic_string.Split(' ').ToList();
+            List<Semantic> list_keywords = new List<Semantic>();
+            foreach (string keyword in semantic_Keywords)
             {
-                return (*(IntPtr*)&f);
+                list_keywords.Add((Semantic)Enum.Parse(typeof(Semantic), keyword));
+            }
+            semantic = list_keywords[0];
+            for (int i = 1; i < list_keywords.Count; i++)
+            {
+                semantic |= list_keywords[i];
             }
         }
 
-        public ROD_ExportG()
-        {
-            maxGlobal = Autodesk.Max.GlobalInterface.Instance;
-            maxInterface = maxGlobal.COREInterface13;
-        }
-
-        public static void ComputeVertexData(IMesh _mMesh, Semantic _semantic, string _filepath)
+        public static void ComputeVertexData(IMesh _mMesh, IISkinContextData _skin, Semantic _semantic, string _filepath)
         {
             Dictionary<int, VertexUndivided> verticesFullData = new Dictionary<int, VertexUndivided>();
             List<FaceData> facesFullData = new List<FaceData>();
@@ -225,6 +233,7 @@ namespace ROD_Exporter
             IList<ITVFace> Tfaces = _mMesh.TvFace;
             IList<IPoint3> vertices = _mMesh.Verts;
             IList<IPoint3> Tvertices = _mMesh.TVerts;
+            
             foreach (IPoint3 _v in vertices)
             {
                 float temp = _v.Y;
@@ -268,6 +277,24 @@ namespace ROD_Exporter
                     {
                         VertexUndivided _v = new VertexUndivided();
                         _v.ID = faces[_fID].GetVert(i);
+                        int nbBonesA=_skin.GetNumAssignedBones((int)_v.ID);
+                        List<Byte> bonesID = new List<byte>();
+                        List<float> bonesWeights = new List<float>();
+                        for (int b = 0; b < 4; b++)
+                        {
+                            if(nbBonesA<b+1)
+                            {
+                                bonesID.Add(0);
+                                bonesWeights.Add(0);
+                            }
+                            else
+                            {
+                                bonesID.Add((byte)_skin.GetAssignedBone((int)_v.ID, b));
+                                bonesWeights.Add(_skin.GetBoneWeight((int)_v.ID, b));
+                            }
+                        }
+                        _v.bonesID = new ROD_core.BoneIndices(bonesID[0], bonesID[1], bonesID[2], bonesID[3]);
+                        _v.bonesWeights = new Vector4(bonesWeights[0], bonesWeights[1], bonesWeights[2], bonesWeights[3]);
                         _v.pos = (vertices[(int)_v.ID]).convertToVector3();
                         _v.faceInfo.Add(new PerFaceInfo(_fID, (int)faces[_fID].SmGroup, (Tvertices[(int)Tfaces[_fID].GetTVert(i)]).convertToVector2(), normUnsure, tangent));
                         verticesFullData.Add((int)faces[_fID].GetVert(i), _v);
@@ -296,14 +323,6 @@ namespace ROD_Exporter
                         VertexDictionary.Add(_vID, new Dictionary<int, int>());
                     }
                     vertexTranslation = VertexDictionary[_vID];
-                    /*
-                    if (vertexTranslation.ContainsKey(facesFullData[_faceID].SMG))
-                    {
-                        IndexBuffer.Add(vertexTranslation[facesFullData[_faceID].SMG]);
-                    }
-                    else
-                    {
-                     */
                     VertexDivided _newVertex = new VertexDivided();
                     _newVertex.pos = verticesFullData[_vertex].pos;
 
@@ -321,10 +340,10 @@ namespace ROD_Exporter
                     _newVertex.normal = _normal_aggreagate;
                     _newVertex.tangent = _tangent_aggreagate;
                     _newVertex.binormal = Vector3.Cross(_normal_aggreagate, _tangent_aggreagate);
-                    //vertexTranslation.Add(facesFullData[_faceID].SMG, VertexBuffer.Count);
+                    _newVertex.bonesID = verticesFullData[_vertex].bonesID;
+                    _newVertex.bonesWeights = verticesFullData[_vertex].bonesWeights;
                     IndexBuffer.Add(VertexBuffer.Count);
                     VertexBuffer.Add(_newVertex);
-                    //}
                 }
             }
             mesh._indexStream = new IndexStream(IndexBuffer.Count, typeof(UInt16), true, true);
@@ -336,6 +355,9 @@ namespace ROD_Exporter
                 VertexDivided res = VertexBuffer[_id];
                 mesh._indexStream.WriteIndex(_id);
             }
+            Type dv = DynamicVertex.CreateVertex(_semantic);
+            FieldInfo[] PI = dv.GetFields();
+            
             foreach (VertexDivided vd in VertexBuffer)
             {
                 if (mesh._boundingBox.Minimum == null)
@@ -349,7 +371,15 @@ namespace ROD_Exporter
                 mesh._boundingBox.Maximum.X = Math.Max(mesh._boundingBox.Maximum.X, vd.pos.X);
                 mesh._boundingBox.Maximum.Y = Math.Max(mesh._boundingBox.Maximum.Y, vd.pos.Y);
                 mesh._boundingBox.Maximum.Z = Math.Max(mesh._boundingBox.Maximum.Z, vd.pos.Z);
-                object[] obj = new object[] { vd.pos, vd.normal, vd.UV, vd.binormal, vd.tangent };
+                List<object> vertexData = new List<object>();
+                for (int i = 0; i < PI.Length; i++)
+                {
+                    string fieldSemantic = ((InputElementAttribute)PI[i].GetCustomAttributes(true).First()).Semantic;
+                    vertexData.Add(vd.GetSemanticObject(fieldSemantic));
+                }
+                object[] obj = vertexData.ToArray();
+                //object[] obj = new object[] { vd.pos, vd.normal, vd.UV, vd.binormal, vd.bonesID, vd.bonesWeights, vd.tangent };
+                //object[] obj = new object[] { vd.pos, vd.normal, vd.UV, vd.binormal, vd.tangent };
                 //object[] obj = new object[] { vd.pos, vd.normal, vd.UV};
                 mesh._vertexStream.WriteVertex(obj);
             }
@@ -357,7 +387,7 @@ namespace ROD_Exporter
         }
 
 
-
+        
     }
     public struct PerFaceInfo
     {
@@ -394,24 +424,46 @@ namespace ROD_Exporter
         public uint ID;
         public Vector3 pos;
         public List<PerFaceInfo> faceInfo;
+        public ROD_core.BoneIndices bonesID;
+        public Vector4 bonesWeights;
 
         public VertexUndivided()
         {
             faceInfo = new List<PerFaceInfo>();
         }
     }
+    public class SemanticMatch : Attribute
+    {
+        public SemanticMatch(Semantic _inputSemantic)
+        {
+            this.inputSemantic = _inputSemantic;
+        }
+        private Semantic inputSemantic;
+        public Semantic InputSemantic
+        {
+            get { return inputSemantic; }
+            set { inputSemantic = value; }
+        }
+    }
     public struct VertexDivided
     {
+        [SemanticMatch(Semantic.POSITION)]
         public Vector3 pos;
+        [SemanticMatch(Semantic.NORMAL)]
         public Vector3 normal;
+        [SemanticMatch(Semantic.TEXCOORD)]
         public Vector2 UV;
+        [SemanticMatch(Semantic.BINORMAL)]
         public Vector3 binormal;
+        [SemanticMatch(Semantic.TANGENT)]
         public Vector3 tangent;
+        [SemanticMatch(Semantic.BONEINDEX)]
         public ROD_core.BoneIndices bonesID;
+        [SemanticMatch(Semantic.BONEWEIGHT)]
         public Vector4 bonesWeights;
     }
 
-
+    
 
 
     public static class maxHelper
@@ -430,6 +482,41 @@ namespace ROD_Exporter
         {
             Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, 0, 0, 0, 1);
             return _output;
+        }
+        public static IntPtr IntPtrFromFloat(float f)
+        {
+            unsafe
+            {
+                return (*(IntPtr*)&f);
+            }
+        }
+
+        public static Object GetSemanticObject(this VertexDivided value, string _semantic)
+        {
+            Type type = value.GetType();
+
+            // Get fieldinfo for this type
+            FieldInfo[] fieldInfos = type.GetFields();
+            Object ret = null;
+            foreach (FieldInfo fi in fieldInfos)
+            {
+                Semantic attrib = (fi.GetCustomAttributes(typeof(SemanticMatch), false) as SemanticMatch[]).First().InputSemantic;
+                if(attrib.ToString() == _semantic)
+                {
+                    ret = fi.GetValue(value);
+                    return ret;
+                }
+            }
+
+            // Return the first if there was a match.
+            try
+            {
+                return ret;
+            }
+            catch (Exception ex)
+            {
+                throw new SystemException(ex.Message);
+            }
         }
     }
 }
