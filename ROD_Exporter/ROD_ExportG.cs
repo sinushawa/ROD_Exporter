@@ -65,7 +65,7 @@ namespace ROD_Exporter
             }
             return true;
         }
-        public static bool Bone_To(int _frame)
+        public static bool Bone_To(List<int> _frames, string _filename)
         {
             ROD_ExportG r = new ROD_ExportG();
             
@@ -81,27 +81,50 @@ namespace ROD_Exporter
 
                         IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
                         IINode _bone = _skin.GetBone(0);
+                        int nbBones = _skin.NumBones;
+                        List<string> boneName = new List<string>();
+                        for (int b = 0; b < nbBones; b++)
+                        {
+                            boneName.Add(_skin.GetBone(b).Name);
+                        }
                         // create bindPose
                         Joint Bjoint = BuildBind(_bone, null, r);
-                        List<Joint> joints = Bjoint.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.Breadth_first).ToList();
-                        for (int i = 0; i < joints.Count; i++)
+                        List<Joint> jointsB = Bjoint.GetEnumerable().ToList();
+                        for (int i = 0; i < jointsB.Count; i++)
                         {
-                            joints[i].id = i;
+                            int Id = boneName.IndexOf(jointsB[i].name);
+                            jointsB[i].id = Id;
                         }
-                        // create Pose at frame (_frame)
+
+                        ROD_core.Graphics.Animation.Clip_Skinning clip = new ROD_core.Graphics.Animation.Clip_Skinning();
+                        clip.startPose = new ROD_core.Graphics.Animation.Pose("TPose", Bjoint);
+                        clip.sequencesData = new List<ROD_core.Graphics.Animation.Pose>();
+                        clip.sequencesTiming = new List<TimeSpan>();
+                        for (int f = 0; f < _frames.Count; f++)
+                        {
+                            // create Pose at frame (_frame)
+                            Joint Ljoint = Bjoint.Clone(null);
+                            List<Joint> jointsL = Bjoint.GetEnumerable().ToList();
+                            BuildLJoint(jointsL[0], _skin.GetBone(0), null, _frames[f], r);
+                            for (int i = 1; i < jointsL.Count; i++)
+                            {
+                                BuildLJoint(jointsL[i], _skin.GetBone(i), jointsB[i].parent, _frames[f], r);
+                            }
+                            ROD_core.Graphics.Animation.Pose _pose = new ROD_core.Graphics.Animation.Pose(("frame" + _frames[f].ToString()), Ljoint);
+                            clip.sequencesData.Add(_pose);
+                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 30));
+                        }
+                        clip.saveToFile(_filename);
+
+                        /*  OLD Method slightly slower (<1ms)
                         Joint joint = BuildJoint(_bone, null, Bjoint, 10, r);
-                        List<Joint> jointsJ = Bjoint.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.Breadth_first).ToList();
+                        List<Joint> jointsJ = Bjoint.GetEnumerable().ToList();
                         for (int i = 0; i < jointsJ.Count; i++)
                         {
+                            int Id = boneName.IndexOf(jointsB[i].name);
                             jointsJ[i].id = i;
                         }
-
-                        ROD_core.Graphics.Animation.Pose Tpose = new ROD_core.Graphics.Animation.Pose("TPose", Bjoint);
-                        Tpose.saveToFile("test.pos");
-
-                        ROD_core.Graphics.Animation.Pose Tpose2 = ROD_core.Graphics.Animation.Pose.createFromFile("test.pos");
-                        
-                        IISkinContextData _skinContext = _skin.GetContextInterface(_node);
+                         * */
 
                         /* // this part was to test the correctness of the creation of the local transforms
                         Joint jointT = JointTest(joint, null, _frame, r);
@@ -119,7 +142,10 @@ namespace ROD_Exporter
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
-                joint.children.Add(BuildBind(_node.GetChildNode(i), joint, r));
+                if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
+                {
+                    joint.children.Add(BuildBind(_node.GetChildNode(i), joint, r));
+                }
             }
             return joint;
         }
@@ -128,7 +154,7 @@ namespace ROD_Exporter
             Joint _bindParent = null;
             if(_parent != null)
             {
-                _bindParent = _bindPose.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.Breadth_first).Where(x => x.name == _parent.name).First();
+                _bindParent = _bindPose.GetEnumerable(ROD_core.Graphics.Animation.TreeNavigation.depth_first).First(x => x.name == _parent.name);
             }
             DualQuaternion DQ = GetBoneLocalDQ(_node, _bindParent, _frame, r);
             Joint joint = new Joint(0, _node.Name, _parent, DQ);
@@ -138,6 +164,11 @@ namespace ROD_Exporter
                 joint.children.Add(BuildJoint(_node.GetChildNode(i), joint, _bindPose, 10, r));
             }
             return joint;
+        }
+        public static void BuildLJoint(Joint value, IINode _node, Joint _bindPose, int _frame, ROD_ExportG r)
+        {
+            DualQuaternion DQ = GetBoneLocalDQ(_node, _bindPose, _frame, r);
+            value.localRotationTranslation = DQ;
         }
         public static ROD_core.Graphics.Animation.Joint JointTest(Joint joint, Joint _parent, int _frame, ROD_ExportG r)
         {
