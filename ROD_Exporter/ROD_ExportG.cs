@@ -65,7 +65,7 @@ namespace ROD_Exporter
             }
             return true;
         }
-        public static bool Bone_To(List<int> _frames, string _filename)
+        public static bool Bone_To(List<int> _frames, string _filename, string _filenameSkeleton)
         {
             ROD_ExportG r = new ROD_ExportG();
             
@@ -96,8 +96,10 @@ namespace ROD_Exporter
                             jointsB[i].id = Id;
                         }
 
+                        ROD_core.Graphics.Animation.Skeleton skelete = new ROD_core.Graphics.Animation.Skeleton("skelete", new ROD_core.Graphics.Animation.Pose("TPose", Bjoint));
+                        skelete.saveToFile(_filenameSkeleton);
+
                         ROD_core.Graphics.Animation.Clip_Skinning clip = new ROD_core.Graphics.Animation.Clip_Skinning();
-                        clip.startPose = new ROD_core.Graphics.Animation.Pose("TPose", Bjoint);
                         clip.sequencesData = new List<ROD_core.Graphics.Animation.Pose>();
                         clip.sequencesTiming = new List<TimeSpan>();
                         for (int f = 0; f < _frames.Count; f++)
@@ -309,7 +311,7 @@ namespace ROD_Exporter
                         VertexUndivided _v = new VertexUndivided();
                         _v.ID = faces[_fID].GetVert(i);
                         int nbBonesA=_skin.GetNumAssignedBones((int)_v.ID);
-                        List<Byte> bonesID = new List<byte>();
+                        List<int> bonesID = new List<int>();
                         List<float> bonesWeights = new List<float>();
                         for (int b = 0; b < 4; b++)
                         {
@@ -320,7 +322,7 @@ namespace ROD_Exporter
                             }
                             else
                             {
-                                bonesID.Add((byte)_skin.GetAssignedBone((int)_v.ID, b));
+                                bonesID.Add(_skin.GetAssignedBone((int)_v.ID, b));
                                 bonesWeights.Add(_skin.GetBoneWeight((int)_v.ID, b));
                             }
                         }
