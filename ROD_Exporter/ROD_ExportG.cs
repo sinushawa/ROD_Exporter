@@ -106,7 +106,7 @@ namespace ROD_Exporter
                         {
                             // create Pose at frame (_frame)
                             Joint Ljoint = Bjoint.Clone(null);
-                            List<Joint> jointsL = Bjoint.GetEnumerable().ToList();
+                            List<Joint> jointsL = Ljoint.GetEnumerable().ToList();
                             BuildLJoint(jointsL[0], _skin.GetBone(0), null, _frames[f], r);
                             for (int i = 1; i < jointsL.Count; i++)
                             {
@@ -163,7 +163,7 @@ namespace ROD_Exporter
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
-                joint.children.Add(BuildJoint(_node.GetChildNode(i), joint, _bindPose, 10, r));
+                joint.children.Add(BuildJoint(_node.GetChildNode(i), joint, _bindPose, _frame, r));
             }
             return joint;
         }
@@ -225,6 +225,12 @@ namespace ROD_Exporter
             interval.SetInfinite();
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
+            IPoint3 U = r.maxGlobal.Point3.Create(1,0,0);
+            IPoint3 V = r.maxGlobal.Point3.Create(0,0,1);
+            IPoint3 N = r.maxGlobal.Point3.Create(1,0,0);
+            IPoint3 T = r.maxGlobal.Point3.Create(1,1,1);
+            IMatrix3 _rightHanded = r.maxGlobal.Matrix3.Create(U, V, N, T);
+            _node_matrix.MultiplyBy(_rightHanded);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
@@ -490,9 +496,9 @@ namespace ROD_Exporter
         public Vector3 binormal;
         [SemanticMatch(Semantic.TANGENT)]
         public Vector3 tangent;
-        [SemanticMatch(Semantic.BONEINDEX)]
+        [SemanticMatch(Semantic.BLENDINDICES)]
         public ROD_core.BoneIndices bonesID;
-        [SemanticMatch(Semantic.BONEWEIGHT)]
+        [SemanticMatch(Semantic.BLENDWEIGHT)]
         public Vector4 bonesWeights;
     }
 
