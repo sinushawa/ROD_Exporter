@@ -24,11 +24,17 @@ namespace ROD_Exporter
 
         public static List<uint> SelectedNodes = new List<uint>();
         public static Semantic semantic;
+        private static IMatrix3 _rightHanded;
 
         public ROD_ExportG()
         {
             maxGlobal = Autodesk.Max.GlobalInterface.Instance;
             maxInterface = maxGlobal.COREInterface13;
+            IPoint3 U = maxGlobal.Point3.Create(1.0, 0.0, 0.0);
+            IPoint3 V = maxGlobal.Point3.Create(0.0, 0.0, 1.0);
+            IPoint3 N = maxGlobal.Point3.Create(0.0, -1.0, 0.0);
+            IPoint3 T = maxGlobal.Point3.Create(0.0, 0.0, 0.0);
+            _rightHanded = maxGlobal.Matrix3.Create(U, V, N, T);
         }
 
         public static void SelectNode(uint _handle)
@@ -212,6 +218,7 @@ namespace ROD_Exporter
             IInterval interval = r.maxGlobal.Interval.Create();
             interval.SetInfinite();
             IMatrix3 _node_matrix = _node.GetNodeTM(0, interval);
+            _node_matrix.MultiplyBy(_rightHanded);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
@@ -225,11 +232,6 @@ namespace ROD_Exporter
             interval.SetInfinite();
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
-            IPoint3 U = r.maxGlobal.Point3.Create(1,0,0);
-            IPoint3 V = r.maxGlobal.Point3.Create(0,0,1);
-            IPoint3 N = r.maxGlobal.Point3.Create(1,0,0);
-            IPoint3 T = r.maxGlobal.Point3.Create(1,1,1);
-            IMatrix3 _rightHanded = r.maxGlobal.Matrix3.Create(U, V, N, T);
             _node_matrix.MultiplyBy(_rightHanded);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
@@ -276,7 +278,7 @@ namespace ROD_Exporter
             foreach (IPoint3 _v in vertices)
             {
                 float temp = _v.Y;
-                _v.Y = _v.Z;
+                _v.Y = -_v.Z;
                 _v.Z = temp;
             }
 
@@ -285,10 +287,10 @@ namespace ROD_Exporter
                 FaceData _face = new FaceData((int)faces[_fID].SmGroup);
 
                 // vectors are inverted to make up for max being clockwise
-                Vector3 A_B = vertices[(int)faces[_fID].GetVert(0)].convertToVector3() - vertices[(int)faces[_fID].GetVert(1)].convertToVector3();
-                Vector3 A_C = vertices[(int)faces[_fID].GetVert(0)].convertToVector3() - vertices[(int)faces[_fID].GetVert(2)].convertToVector3();
-                Vector3 U = Tvertices[(int)Tfaces[_fID].GetTVert(0)].convertToVector3() - Tvertices[(int)Tfaces[_fID].GetTVert(1)].convertToVector3();
-                Vector3 V = Tvertices[(int)Tfaces[_fID].GetTVert(0)].convertToVector3() - Tvertices[(int)Tfaces[_fID].GetTVert(2)].convertToVector3();
+                Vector3 A_B = vertices[(int)faces[_fID].GetVert(1)].convertToVector3() - vertices[(int)faces[_fID].GetVert(0)].convertToVector3();
+                Vector3 A_C = vertices[(int)faces[_fID].GetVert(2)].convertToVector3() - vertices[(int)faces[_fID].GetVert(0)].convertToVector3();
+                Vector3 U = Tvertices[(int)Tfaces[_fID].GetTVert(1)].convertToVector3() - Tvertices[(int)Tfaces[_fID].GetTVert(0)].convertToVector3();
+                Vector3 V = Tvertices[(int)Tfaces[_fID].GetTVert(2)].convertToVector3() - Tvertices[(int)Tfaces[_fID].GetTVert(0)].convertToVector3();
 
                 Vector3 normUnsure = Vector3.Cross(A_B, A_C);
                 normUnsure.Normalize();
