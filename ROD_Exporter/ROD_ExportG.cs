@@ -11,7 +11,9 @@ using ROD_core.Graphics.Assets;
 using System.Runtime.InteropServices;
 using System.IO;
 using System.Diagnostics;
+using Pose = ROD_core.Graphics.Animation.Pose;
 using Joint=ROD_core.Graphics.Animation.Joint;
+using Skeleton = ROD_core.Graphics.Animation.Skeleton;
 using DualQuaternion = ROD_core.Mathematics.DualQuaternion;
 
 namespace ROD_Exporter
@@ -31,8 +33,8 @@ namespace ROD_Exporter
             maxGlobal = Autodesk.Max.GlobalInterface.Instance;
             maxInterface = maxGlobal.COREInterface13;
             IPoint3 U = maxGlobal.Point3.Create(1.0, 0.0, 0.0);
-            IPoint3 V = maxGlobal.Point3.Create(0.0, 0.0, 1.0);
-            IPoint3 N = maxGlobal.Point3.Create(0.0, -1.0, 0.0);
+            IPoint3 V = maxGlobal.Point3.Create(0.0, 0.0, -1.0);
+            IPoint3 N = maxGlobal.Point3.Create(0.0, 1.0, 0.0);
             IPoint3 T = maxGlobal.Point3.Create(0.0, 0.0, 0.0);
             _rightHanded = maxGlobal.Matrix3.Create(U, V, N, T);
         }
@@ -93,7 +95,7 @@ namespace ROD_Exporter
                         {
                             boneName.Add(_skin.GetBone(b).Name);
                         }
-                        // create bindPose
+                        #region create bindPose World
                         Joint Bjoint = BuildBind(_bone, null, r);
                         List<Joint> jointsB = Bjoint.GetEnumerable().ToList();
                         for (int i = 0; i < jointsB.Count; i++)
@@ -101,12 +103,25 @@ namespace ROD_Exporter
                             int Id = boneName.IndexOf(jointsB[i].name);
                             jointsB[i].id = Id;
                         }
+                        Pose Tpose = new Pose("TPoseW", Bjoint);
+                        #endregion
 
-                        ROD_core.Graphics.Animation.Skeleton skelete = new ROD_core.Graphics.Animation.Skeleton("skelete", new ROD_core.Graphics.Animation.Pose("TPose", Bjoint));
+                        #region create bindPose Local
+                        Joint BLjoint = BuildBindLocal(_bone, null, r);
+                        List<Joint> jointsBL = BLjoint.GetEnumerable().ToList();
+                        for (int i = 0; i < jointsBL.Count; i++)
+                        {
+                            int Id = boneName.IndexOf(jointsBL[i].name);
+                            jointsBL[i].id = Id;
+                        }
+                        Pose TposeL = new Pose("TPoseL", BLjoint);
+                        #endregion
+
+                        Skeleton skelete = new Skeleton("skelete", Tpose);
                         skelete.saveToFile(_filenameSkeleton);
 
                         ROD_core.Graphics.Animation.Clip_Skinning clip = new ROD_core.Graphics.Animation.Clip_Skinning();
-                        clip.sequencesData = new List<ROD_core.Graphics.Animation.Pose>();
+                        clip.sequencesData = new List<Pose>();
                         clip.sequencesTiming = new List<TimeSpan>();
                         for (int f = 0; f < _frames.Count; f++)
                         {
@@ -118,7 +133,7 @@ namespace ROD_Exporter
                             {
                                 BuildLJoint(jointsL[i], _skin.GetBone(i), jointsB[i].parent, _frames[f], r);
                             }
-                            ROD_core.Graphics.Animation.Pose _pose = new ROD_core.Graphics.Animation.Pose(("frame" + _frames[f].ToString()), Ljoint);
+                            Pose _pose = new Pose(("frame" + _frames[f].ToString()), Ljoint);
                             clip.sequencesData.Add(_pose);
                             clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 30));
                         }
@@ -157,6 +172,23 @@ namespace ROD_Exporter
             }
             return joint;
         }
+        public static Joint BuildBindLocal(IINode _node, Joint _parentJoint, ROD_ExportG r)
+        {
+            DualQuaternion DQ = GetBoneLocalDQ(_node, _parentJoint, 0, r);
+            Joint joint = new Joint(0, _node.Name, _parentJoint, DQ);
+            int childrensNb = _node.NumberOfChildren;
+            for (int i = 0; i < childrensNb; i++)
+            {
+                if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
+                {
+                    joint.children.Add(BuildBindLocal(_node.GetChildNode(i), joint, r));
+                }
+            }
+            return joint;
+        }
+
+        #region OLD Method for LocalBoneComputation slightly slower
+        /*
         public static ROD_core.Graphics.Animation.Joint BuildJoint(IINode _node, Joint _parent, Joint _bindPose, int _frame, ROD_ExportG r)
         {
             Joint _bindParent = null;
@@ -173,9 +205,12 @@ namespace ROD_Exporter
             }
             return joint;
         }
-        public static void BuildLJoint(Joint value, IINode _node, Joint _bindPose, int _frame, ROD_ExportG r)
+         * */
+        #endregion
+
+        public static void BuildLJoint(Joint value, IINode _node, Joint _parentJoint, int _frame, ROD_ExportG r)
         {
-            DualQuaternion DQ = GetBoneLocalDQ(_node, _bindPose, _frame, r);
+            DualQuaternion DQ = GetBoneLocalDQ(_node, _parentJoint, _frame, r);
             value.localRotationTranslation = DQ;
         }
         public static ROD_core.Graphics.Animation.Joint JointTest(Joint joint, Joint _parent, int _frame, ROD_ExportG r)
@@ -221,8 +256,15 @@ namespace ROD_Exporter
             _node_matrix.MultiplyBy(_rightHanded);
             IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
             IQuat _local_Rotation = r.maxGlobal.Quat.Create();
+            _local_Rotation.Identity();
             IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
             r.maxGlobal.DecomposeMatrix(_node_matrix, _local_Translation, _local_Rotation, _local_Scale);
+            Quaternion _rotation = new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W);
+            if(_node.Name=="AsMan0002-M3-CS_Spine")
+            {
+                _rotation = Quaternion.Identity;
+            }
+            Vector3 _translation = new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z);
             DualQuaternion DQ = new DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
             return DQ;
         }
