@@ -33,7 +33,7 @@ namespace ROD_Exporter
             maxGlobal = Autodesk.Max.GlobalInterface.Instance;
             maxInterface = maxGlobal.COREInterface13;
             IPoint3 U = maxGlobal.Point3.Create(1.0, 0.0, 0.0);
-            IPoint3 V = maxGlobal.Point3.Create(0.0, 0.0, -1.0);
+            IPoint3 V = maxGlobal.Point3.Create(0.0, 0.0, 1.0);
             IPoint3 N = maxGlobal.Point3.Create(0.0, 1.0, 0.0);
             IPoint3 T = maxGlobal.Point3.Create(0.0, 0.0, 0.0);
             _rightHanded = maxGlobal.Matrix3.Create(U, V, N, T);
@@ -81,6 +81,8 @@ namespace ROD_Exporter
             {
                 IINode _node = r.maxInterface.GetINodeByHandle(_handle);
                 IIDerivedObject theObj = (IIDerivedObject)_node.ObjectRef;
+                IInterval interval = r.maxGlobal.Interval.Create();
+                interval.SetInfinite();
                 for (int m = 0; m < theObj.Modifiers.Count; m++)
                 {
                     IModifier theModifier = theObj.GetModifier(m);
@@ -89,6 +91,7 @@ namespace ROD_Exporter
 
                         IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
                         IINode _bone = _skin.GetBone(0);
+                        
                         int nbBones = _skin.NumBones;
                         List<string> boneName = new List<string>();
                         for (int b = 0; b < nbBones; b++)
@@ -137,6 +140,7 @@ namespace ROD_Exporter
                             clip.sequencesData.Add(_pose);
                             clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 30));
                         }
+
                         clip.saveToFile(_filename);
 
                         /*  OLD Method slightly slower (<1ms)
@@ -254,18 +258,11 @@ namespace ROD_Exporter
             interval.SetInfinite();
             IMatrix3 _node_matrix = _node.GetNodeTM(0, interval);
             _node_matrix.MultiplyBy(_rightHanded);
-            IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
-            IQuat _local_Rotation = r.maxGlobal.Quat.Create();
-            _local_Rotation.Identity();
-            IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
-            r.maxGlobal.DecomposeMatrix(_node_matrix, _local_Translation, _local_Rotation, _local_Scale);
-            Quaternion _rotation = new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W);
-            if(_node.Name=="AsMan0002-M3-CS_Spine")
-            {
-                _rotation = Quaternion.Identity;
-            }
-            Vector3 _translation = new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z);
-            DualQuaternion DQ = new DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
+            IAffineParts parts = r.maxGlobal.AffineParts.Create();
+            r.maxGlobal.DecompAffine(_node_matrix, parts);
+            Quaternion sharpQ = parts.Q.convertTo();
+            Vector3 sharpT = parts.T.convertToVector3();
+            DualQuaternion DQ = new DualQuaternion(sharpQ, sharpT);
             return DQ;
         }
         public static DualQuaternion GetBoneLocalDQ(IINode _node, Joint _parent, int _frame, ROD_ExportG r)
@@ -275,11 +272,11 @@ namespace ROD_Exporter
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
             IMatrix3 _node_matrix = _node.GetNodeTM(_frame * _ticks_per_frame, interval);
             _node_matrix.MultiplyBy(_rightHanded);
-            IPoint3 _local_Translation = r.maxGlobal.Point3.Create();
-            IQuat _local_Rotation = r.maxGlobal.Quat.Create();
-            IPoint3 _local_Scale = r.maxGlobal.Point3.Create();
-            r.maxGlobal.DecomposeMatrix(_node_matrix, _local_Translation, _local_Rotation, _local_Scale);
-            DualQuaternion DQ = new DualQuaternion(new Quaternion(_local_Rotation.X, _local_Rotation.Y, _local_Rotation.Z, _local_Rotation.W), new Vector3(_local_Translation.X, _local_Translation.Y, _local_Translation.Z));
+            IAffineParts parts = r.maxGlobal.AffineParts.Create();
+            r.maxGlobal.DecompAffine(_node_matrix, parts);
+            Quaternion sharpQ = parts.Q.convertTo();
+            Vector3 sharpT = parts.T.convertToVector3();
+            DualQuaternion DQ = new DualQuaternion(sharpQ, sharpT);
             if (_parent != null)
             {
                 DQ = DQ * DualQuaternion.Conjugate(_parent.localRotationTranslation);
@@ -396,6 +393,7 @@ namespace ROD_Exporter
 
             for (int _faceID = 0; _faceID < facesFullData.Count; _faceID++)
             {
+                facesFullData[_faceID].vertices.Reverse();
                 foreach (int _vertex in facesFullData[_faceID].vertices)
                 {
                     Dictionary<int, int> vertexTranslation;
@@ -565,6 +563,10 @@ namespace ROD_Exporter
         {
             Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, 0, 0, 0, 1);
             return _output;
+        }
+        public static Quaternion convertTo(this IQuat _input)
+        {
+            return new Quaternion(_input.X, _input.Y, _input.Z, _input.W);
         }
         public static IntPtr IntPtrFromFloat(float f)
         {
