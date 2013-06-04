@@ -27,6 +27,7 @@ namespace ROD_Exporter
         public static List<uint> SelectedNodes = new List<uint>();
         public static Semantic semantic;
         private static IMatrix3 _rightHanded;
+        private static IGMatrix _GrightHanded;
 
         public ROD_ExportG()
         {
@@ -37,6 +38,7 @@ namespace ROD_Exporter
             IPoint3 N = maxGlobal.Point3.Create(0.0, 1.0, 0.0);
             IPoint3 T = maxGlobal.Point3.Create(0.0, 0.0, 0.0);
             _rightHanded = maxGlobal.Matrix3.Create(U, V, N, T);
+            _GrightHanded = maxGlobal.GMatrix.Create(_rightHanded);
         }
 
         public static void SelectNode(uint _handle)
@@ -47,10 +49,13 @@ namespace ROD_Exporter
         public static bool Export_To(string _filepath)
         {
             ROD_ExportG r = new ROD_ExportG();
+            
+            
             foreach (uint _handle in SelectedNodes)
             {
                 
                 IINode _node = r.maxInterface.GetINodeByHandle(_handle);
+                
                 IIDerivedObject _gObject = (IIDerivedObject)_node.ObjectRef;
                 IClass_ID classID = r.maxGlobal.Class_ID.Create((uint)BuiltInClassIDA.TRIOBJ_CLASS_ID, 0);
                 ITriObject _mObject = (ITriObject)_gObject.ObjRef.ConvertToType(0, classID);
@@ -83,6 +88,7 @@ namespace ROD_Exporter
                 IIDerivedObject theObj = (IIDerivedObject)_node.ObjectRef;
                 IInterval interval = r.maxGlobal.Interval.Create();
                 interval.SetInfinite();
+                r.maxGlobal.IGameInterface.InitialiseIGame(false);
                 for (int m = 0; m < theObj.Modifiers.Count; m++)
                 {
                     IModifier theModifier = theObj.GetModifier(m);
@@ -91,7 +97,19 @@ namespace ROD_Exporter
 
                         IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
                         IINode _bone = _skin.GetBone(0);
-                        
+                        IIGameNode GNode = r.maxGlobal.IGameInterface.GetIGameNode(_bone);
+                        int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
+                        IGMatrix _node_matrix = GNode.GetWorldTM(0 * _ticks_per_frame);
+                        //_node_matrix.MultiplyBy(_GrightHanded);
+                        Matrix sharpM = _node_matrix.convertTo();
+                        Quaternion sharpQM ;
+                        Vector3 sharpSc;
+                        Vector3 sharpTr;
+                        sharpM.Decompose(out sharpSc, out sharpQM, out sharpTr);
+                        Quaternion sharpQI = new Quaternion(sharpQM.X, -sharpQM.Z, -sharpQM.Y, sharpQM.W);
+                        Vector3 sharpT = _node_matrix.Translation.convertToVector3();
+                        DualQuaternion DQ = new DualQuaternion(sharpQI, sharpT);
+
                         int nbBones = _skin.NumBones;
                         List<string> boneName = new List<string>();
                         for (int b = 0; b < nbBones; b++)
@@ -560,6 +578,11 @@ namespace ROD_Exporter
             return _output;
         }
         public static Matrix convertTo(this IMatrix3 _input)
+        {
+            Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, 0, 0, 0, 1);
+            return _output;
+        }
+        public static Matrix convertTo(this IGMatrix _input)
         {
             Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, 0, 0, 0, 1);
             return _output;
