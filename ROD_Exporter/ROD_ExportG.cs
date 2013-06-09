@@ -146,7 +146,7 @@ namespace ROD_Exporter
                             }
                             Pose _pose = new Pose(("frame" + _frames[f].ToString()), Ljoint);
                             clip.sequencesData.Add(_pose);
-                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 30));
+                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 3));
                         }
 
                         clip.saveToFile(_filename);
@@ -336,13 +336,14 @@ namespace ROD_Exporter
             IList<IPoint3> vertices = _mMesh.Verts;
             IList<IPoint3> Tvertices = _mMesh.TVerts;
             
+            /*
             foreach (IPoint3 _v in vertices)
             {
                 float temp = _v.Y;
                 _v.Y = -_v.Z;
                 _v.Z = temp;
             }
-
+            */
             for (int _fID = 0; _fID < faces.Count; _fID++)
             {
                 FaceData _face = new FaceData((int)faces[_fID].SmGroup);
