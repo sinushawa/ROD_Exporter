@@ -136,8 +136,6 @@ namespace ROD_Exporter
                         clip.sequencesTiming = new List<TimeSpan>();
                         for (int f = 0; f < _frames.Count; f++)
                         {
-                            #region local bone transform using bind as reference off
-                            /*
                             // create Pose at frame (_frame)
                             Joint Ljoint = Bjoint.Clone(null);
                             List<Joint> jointsL = Ljoint.GetEnumerable().ToList();
@@ -145,18 +143,6 @@ namespace ROD_Exporter
                             for (int i = 1; i < jointsL.Count; i++)
                             {
                                 BuildLJoint(jointsL[i], _skin.GetBone(i), jointsB[i].parent, _frames[f], r);
-                            }
-                            Pose _pose = new Pose(("frame" + _frames[f].ToString()), Ljoint);
-                            clip.sequencesData.Add(_pose);
-                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 3));
-                            */
-                            #endregion
-                            Joint Ljoint = Bjoint.Clone(null);
-                            List<Joint> jointsL = Ljoint.GetEnumerable().ToList();
-                            BuildLJointSelf(_skin.GetBone(0), jointsL[0], _frames[f], r);
-                            for (int i = 1; i < jointsL.Count; i++)
-                            {
-                                BuildLJointSelf(_skin.GetBone(i), jointsL[i], _frames[f], r);
                             }
                             Pose _pose = new Pose(("frame" + _frames[f].ToString()), Ljoint);
                             clip.sequencesData.Add(_pose);
@@ -244,10 +230,6 @@ namespace ROD_Exporter
             DualQuaternion DQ = GetBoneLocalDQ(_node, _bindParentJoint, _frame, r);
             value.localRotationTranslation = DQ;
         }
-        public static void BuildLJointSelf(IINode _node, Joint _self, int _frame, ROD_ExportG r)
-        {
-            GetBoneLocalDQSelf(_node, _self, _frame, r);
-        }
 
         #region methods for test off
         /*
@@ -322,26 +304,6 @@ namespace ROD_Exporter
                 DQ.Normalize();
             }
             return DQ;
-        }
-        public static void GetBoneLocalDQSelf(IINode _node, Joint _selfJoint, int _frame, ROD_ExportG r)
-        {
-            IIGameNode GNode = r.maxGlobal.IGameInterface.GetIGameNode(_node);
-            int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
-            IGMatrix _node_Gmatrix = GNode.GetWorldTM(_frame * _ticks_per_frame);
-            Matrix sharpM = _node_Gmatrix.convertTo();
-            Quaternion sharpQM;
-            Vector3 sharpSc;
-            Vector3 sharpTr;
-            sharpM.Decompose(out sharpSc, out sharpQM, out sharpTr);
-            Vector3 sharpT = _node_Gmatrix.Translation.convertToVector3();
-            DualQuaternion DQ = new DualQuaternion(new Quaternion(sharpQM.X, sharpQM.Y, sharpQM.Z, sharpQM.W), sharpT);
-            _selfJoint.worldRotationTranslation = DQ;
-            if (_selfJoint.parent != null)
-            {
-                DQ = DQ * DualQuaternion.Conjugate(_selfJoint.parent.worldRotationTranslation);
-                DQ.Normalize();
-            }
-            _selfJoint.localRotationTranslation = DQ;
         }
         
         public static void SetSemantic(Semantic _semantic)
