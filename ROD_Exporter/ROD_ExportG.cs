@@ -105,14 +105,8 @@ namespace ROD_Exporter
                             boneName.Add(_skin.GetBone(b).Name);
                         }
                         #region create bindPose World
-                        Joint Bjoint = BuildBind(_bone, null, r);
-                        List<Joint> jointsB = Bjoint.GetEnumerable().ToList();
-                        for (int i = 0; i < jointsB.Count; i++)
-                        {
-                            int Id = boneName.IndexOf(jointsB[i].name);
-                            jointsB[i].id = Id;
-                        }
-                        Pose Tpose = new Pose("TPoseW", Bjoint);
+                        Pose bindPose = new Pose("bindPose");
+                        BuildBind(_bone, -1, bindPose, r);
                         #endregion
 
                         #region create bindPose Local off
@@ -128,7 +122,7 @@ namespace ROD_Exporter
                         */
                         #endregion
 
-                        Skeleton skelete = new Skeleton("skelete", Tpose);
+                        Skeleton skelete = new Skeleton("skelete", bindPose);
                         skelete.saveToFile(_filenameSkeleton);
 
                         ROD_core.Graphics.Animation.Clip_Skinning clip = new ROD_core.Graphics.Animation.Clip_Skinning();
@@ -137,52 +131,31 @@ namespace ROD_Exporter
                         for (int f = 0; f < _frames.Count; f++)
                         {
                             // create Pose at frame (_frame)
-                            Joint Ljoint = Bjoint.Clone(null);
-                            List<Joint> jointsL = Ljoint.GetEnumerable().ToList();
-                            BuildLJoint(jointsL[0], _skin.GetBone(0), null, _frames[f], r);
-                            for (int i = 1; i < jointsL.Count; i++)
-                            {
-                                BuildLJoint(jointsL[i], _skin.GetBone(i), jointsB[i].parent, _frames[f], r);
-                            }
-                            Pose _pose = new Pose(("frame" + _frames[f].ToString()), Ljoint);
+                            Pose _pose = new Pose("frame" + _frames[f].ToString());
+                            BuildLJoint(_bone, -1, _pose, _frames[f], r);
                             clip.sequencesData.Add(_pose);
                             clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 3));
                         }
 
                         clip.saveToFile(_filename);
-
-                        /*  OLD Method slightly slower (<1ms)
-                        Joint joint = BuildJoint(_bone, null, Bjoint, 10, r);
-                        List<Joint> jointsJ = Bjoint.GetEnumerable().ToList();
-                        for (int i = 0; i < jointsJ.Count; i++)
-                        {
-                            int Id = boneName.IndexOf(jointsB[i].name);
-                            jointsJ[i].id = i;
-                        }
-                         * */
-
-                        /* // this part was to test the correctness of the creation of the local transforms
-                        Joint jointT = JointTest(joint, null, _frame, r);
-                        Joint jointFullCircle = JointFullCircle(jointT, Bjoint, null, _frame, r);
-                         * */
                     }
                 }
             }
             return true;
         }
-        public static Joint BuildBind(IINode _node, Joint _parent, ROD_ExportG r)
+        public static void BuildBind(IINode _node, int _parentId, Pose _pose, ROD_ExportG r)
         {
             DualQuaternion DQ = GetBoneBindDQ(_node, r);
-            Joint joint = new Joint(0, _node.Name, _parent, DQ);
+            Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, DQ, DualQuaternion.Identity);
+            _pose.joints.Add(_joint);
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
             {
                 if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
                 {
-                    joint.children.Add(BuildBind(_node.GetChildNode(i), joint, r));
+                    BuildBind(_node.GetChildNode(i), _joint.id, _pose, r);
                 }
             }
-            return joint;
         }
 
         #region Method BindLocal off
@@ -225,10 +198,20 @@ namespace ROD_Exporter
          * */
         #endregion
 
-        public static void BuildLJoint(Joint value, IINode _node, Joint _bindParentJoint, int _frame, ROD_ExportG r)
+        public static void BuildLJoint(IINode _node, int _parentId, Pose _pose, int _frame, ROD_ExportG r)
         {
-            DualQuaternion DQ = GetBoneLocalDQ(_node, _bindParentJoint, _frame, r);
-            value.localRotationTranslation = DQ;
+            DualQuaternion WDQ = GetBoneWorldDQ(_node, _frame, r);
+            DualQuaternion LDQ = GetBoneLocalDQ(_node, _frame, r);
+            Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, WDQ, LDQ);
+            _pose.joints.Add(_joint);
+            int childrensNb = _node.NumberOfChildren;
+            for (int i = 0; i < childrensNb; i++)
+            {
+                if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
+                {
+                    BuildLJoint(_node.GetChildNode(i), _joint.id, _pose, _frame, r);
+                }
+            }
         }
 
         #region methods for test off
@@ -272,11 +255,15 @@ namespace ROD_Exporter
 
         public static DualQuaternion GetBoneBindDQ(IINode _node, ROD_ExportG r)
         {
+            return GetBoneWorldDQ(_node, 0, r);
+        }
+        public static DualQuaternion GetBoneWorldDQ(IINode _node, int _frame, ROD_ExportG r)
+        {
             IInterval interval = r.maxGlobal.Interval.Create();
             interval.SetInfinite();
             IIGameNode GNode = r.maxGlobal.IGameInterface.GetIGameNode(_node);
             int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
-            IGMatrix _node_Gmatrix = GNode.GetWorldTM(0 * _ticks_per_frame);
+            IGMatrix _node_Gmatrix = GNode.GetWorldTM(_frame * _ticks_per_frame);
             Matrix sharpM = _node_Gmatrix.convertTo();
             Quaternion sharpQM;
             Vector3 sharpSc;
@@ -286,7 +273,7 @@ namespace ROD_Exporter
             DualQuaternion DQ = new DualQuaternion(new Quaternion(sharpQM.X, sharpQM.Y, sharpQM.Z, sharpQM.W), sharpT);
             return DQ;
         }
-        public static DualQuaternion GetBoneLocalDQ(IINode _node, Joint _bindParentJoint, int _frame, ROD_ExportG r)
+        public static DualQuaternion GetBoneLocalDQ(IINode _node, int _frame, ROD_ExportG r)
         {
             IINode _parent_node = _node.ParentNode;
             IIGameNode _GNode = r.maxGlobal.IGameInterface.GetIGameNode(_node);
