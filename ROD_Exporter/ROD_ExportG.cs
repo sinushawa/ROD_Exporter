@@ -292,7 +292,7 @@ namespace ROD_Exporter
             Vector3 sharpSc;
             Vector3 sharpTr;
             sharpM.Decompose(out sharpSc, out sharpQM, out sharpTr);
-            Vector3 sharpT = _node_Gmatrix.Translation.convertToVector3();
+            Vector3 sharpT = _local_node_Gmatrix.Translation.convertToVector3();
             DualQuaternion DQ = new DualQuaternion(sharpQM, sharpT);
             DQ.Normalize();
             return DQ;
