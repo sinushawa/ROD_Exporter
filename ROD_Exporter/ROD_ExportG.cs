@@ -21,8 +21,8 @@ namespace ROD_Exporter
 
     public class ROD_ExportG
     {
-        public IGlobal maxGlobal;
-        public IInterface13 maxInterface;
+        public static IGlobal maxGlobal;
+        public static IInterface14 maxInterface;
 
         public static List<uint> SelectedNodes = new List<uint>();
         public static Semantic semantic;
@@ -32,7 +32,7 @@ namespace ROD_Exporter
         public ROD_ExportG()
         {
             maxGlobal = Autodesk.Max.GlobalInterface.Instance;
-            maxInterface = maxGlobal.COREInterface13;
+            maxInterface = maxGlobal.COREInterface14;
             IPoint3 U = maxGlobal.Point3.Create(1.0, 0.0, 0.0);
             IPoint3 V = maxGlobal.Point3.Create(0.0, 0.0, 1.0);
             IPoint3 N = maxGlobal.Point3.Create(0.0, -1.0, 0.0);
@@ -41,23 +41,25 @@ namespace ROD_Exporter
             _GleftHanded = maxGlobal.GMatrix.Create(_leftHanded);
         }
 
-        public static void SelectNode(uint _handle)
+        private static List<IINode> GetSelection()
         {
-            SelectedNodes.Add(_handle);
+            List<IINode> selectedNodes = new List<IINode>();
+            for (int i = 0; i < maxInterface.SelNodeCount; i++)
+            {
+                selectedNodes.Add(maxInterface.GetSelNode(i));
+            }
+            return selectedNodes;
         }
 
         public static bool Export_To(string _filepath)
         {
-            ROD_ExportG r = new ROD_ExportG();
-            
-            
-            foreach (uint _handle in SelectedNodes)
+            List<IINode> nodes = GetSelection();
+
+            foreach (IINode _node in nodes)
             {
                 
-                IINode _node = r.maxInterface.GetINodeByHandle(_handle);
-                
                 IIDerivedObject _gObject = (IIDerivedObject)_node.ObjectRef;
-                IClass_ID classID = r.maxGlobal.Class_ID.Create((uint)BuiltInClassIDA.TRIOBJ_CLASS_ID, 0);
+                IClass_ID classID = maxGlobal.Class_ID.Create((uint)BuiltInClassIDA.TRIOBJ_CLASS_ID, 0);
                 ITriObject _mObject = (ITriObject)_gObject.ObjRef.ConvertToType(0, classID);
                 IMesh _mMesh = _mObject.Mesh;
                 _mMesh.BuildNormals();
@@ -78,17 +80,18 @@ namespace ROD_Exporter
             }
             return true;
         }
-        public static bool Bone_To(List<int> _frames, string _filename, string _filenameSkeleton)
+        
+        public static bool Bone_To(int[] _frames, string _filename, string _filenameSkeleton)
         {
-            ROD_ExportG r = new ROD_ExportG();
-            
-            foreach (uint _handle in SelectedNodes)
+
+            List<IINode> nodes = GetSelection();
+
+            foreach (IINode _node in nodes)
             {
-                IINode _node = r.maxInterface.GetINodeByHandle(_handle);
                 IIDerivedObject theObj = (IIDerivedObject)_node.ObjectRef;
-                IInterval interval = r.maxGlobal.Interval.Create();
+                IInterval interval = maxGlobal.Interval.Create();
                 interval.SetInfinite();
-                r.maxGlobal.IGameInterface.InitialiseIGame(false);
+                maxGlobal.IGameInterface.InitialiseIGame(false);
                 for (int m = 0; m < theObj.Modifiers.Count; m++)
                 {
                     IModifier theModifier = theObj.GetModifier(m);
@@ -106,7 +109,7 @@ namespace ROD_Exporter
                         }
                         #region create bindPose World
                         Pose bindPose = new Pose("bindPose");
-                        BuildBind(_bone, -1, bindPose, r);
+                        BuildBind(_bone, -1, bindPose);
                         #endregion
 
                         Skeleton skelete = new Skeleton("skelete", bindPose);
@@ -115,11 +118,11 @@ namespace ROD_Exporter
                         ROD_core.Graphics.Animation.Clip_Skinning clip = new ROD_core.Graphics.Animation.Clip_Skinning();
                         clip.sequencesData = new List<Pose>();
                         clip.sequencesTiming = new List<TimeSpan>();
-                        for (int f = 0; f < _frames.Count; f++)
+                        for (int f = 0; f < _frames.Length; f++)
                         {
                             // create Pose at frame (_frame)
                             Pose _pose = new Pose("frame" + _frames[f].ToString());
-                            BuildLJoint(_bone, -1, _pose, _frames[f], r, bindPose);
+                            BuildLJoint(_bone, -1, _pose, _frames[f], bindPose);
                             clip.sequencesData.Add(_pose);
                             clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 3));
                         }
@@ -130,9 +133,9 @@ namespace ROD_Exporter
             }
             return true;
         }
-        public static void BuildBind(IINode _node, int _parentId, Pose _pose, ROD_ExportG r)
+        public static void BuildBind(IINode _node, int _parentId, Pose _pose)
         {
-            DualQuaternion DQ = GetBoneBindDQ(_node, r);
+            DualQuaternion DQ = GetBoneBindDQ(_node);
             Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, DQ, DualQuaternion.Identity);
             _pose.joints.Add(_joint);
             int childrensNb = _node.NumberOfChildren;
@@ -140,15 +143,15 @@ namespace ROD_Exporter
             {
                 if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
                 {
-                    BuildBind(_node.GetChildNode(i), _joint.id, _pose, r);
+                    BuildBind(_node.GetChildNode(i), _joint.id, _pose);
                 }
             }
         }
 
-        public static void BuildLJoint(IINode _node, int _parentId, Pose _pose, int _frame, ROD_ExportG r, Pose _bindPose)
+        public static void BuildLJoint(IINode _node, int _parentId, Pose _pose, int _frame, Pose _bindPose)
         {
-            DualQuaternion WDQ = GetBoneWorldDQ(_node, _frame, r);
-            DualQuaternion LDQ = GetBoneLocalDQ(_node, _frame, r);
+            DualQuaternion WDQ = GetBoneWorldDQ(_node, _frame);
+            DualQuaternion LDQ = GetBoneLocalDQ(_node, _frame);
             Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, WDQ, LDQ);
             _pose.joints.Add(_joint);
             int childrensNb = _node.NumberOfChildren;
@@ -156,51 +159,59 @@ namespace ROD_Exporter
             {
                 if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
                 {
-                    BuildLJoint(_node.GetChildNode(i), _joint.id, _pose, _frame, r, _bindPose);
+                    BuildLJoint(_node.GetChildNode(i), _joint.id, _pose, _frame, _bindPose);
                 }
             }
         }
 
-        public static DualQuaternion GetBoneBindDQ(IINode _node, ROD_ExportG r)
+        public static DualQuaternion GetBoneBindDQ(IINode _node)
         {
-            return GetBoneWorldDQ(_node, 0, r);
+            return GetBoneWorldDQ(_node, 0);
         }
-        public static DualQuaternion GetBoneWorldDQ(IINode _node, int _frame, ROD_ExportG r)
+        public static DualQuaternion GetBoneWorldDQ(IINode _node, int _frame)
         {
-            IInterval interval = r.maxGlobal.Interval.Create();
+            IInterval interval = maxGlobal.Interval.Create();
             interval.SetInfinite();
-            IIGameNode GNode = r.maxGlobal.IGameInterface.GetIGameNode(_node);
-            int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
+            IIGameNode GNode = maxGlobal.IGameInterface.GetIGameNode(_node);
+            int _ticks_per_frame = maxGlobal.TicksPerFrame;
             IGMatrix _node_Gmatrix = GNode.GetWorldTM(_frame * _ticks_per_frame);
-            Matrix sharpM = _node_Gmatrix.convertTo();
-            Quaternion sharpQM;
-            Vector3 sharpSc;
-            Vector3 sharpTr;
-            sharpM.Decompose(out sharpSc, out sharpQM, out sharpTr);
-            Vector3 sharpT = _node_Gmatrix.Translation.convertToVector3();
-            DualQuaternion DQ = new DualQuaternion(new Quaternion(sharpQM.X, sharpQM.Y, sharpQM.Z, sharpQM.W), sharpT);
+            DualQuaternion DQ = _node_Gmatrix.convertToDQ();
+
             return DQ;
         }
-        public static DualQuaternion GetBoneLocalDQ(IINode _node, int _frame, ROD_ExportG r)
+        public static DualQuaternion GetBoneLocalDQ(IINode _node, int _frame)
         {
             IINode _parent_node = _node.ParentNode;
-            IIGameNode _GNode = r.maxGlobal.IGameInterface.GetIGameNode(_node);
-            IIGameNode _parentGNode = r.maxGlobal.IGameInterface.GetIGameNode(_parent_node);
-            int _ticks_per_frame = r.maxGlobal.TicksPerFrame;
+            IIGameNode _GNode = maxGlobal.IGameInterface.GetIGameNode(_node);
+            IIGameNode _parentGNode = maxGlobal.IGameInterface.GetIGameNode(_parent_node);
+            int _ticks_per_frame = maxGlobal.TicksPerFrame;
 
+
+            /*
             // node World Transform
             IGMatrix _node_Gmatrix = _GNode.GetWorldTM(_frame * _ticks_per_frame);
-            Matrix sharpM = _node_Gmatrix.convertTo();
-            Quaternion sharpQM;
-            Vector3 sharpSc;
-            Vector3 sharpTr;
-            sharpM.Decompose(out sharpSc, out sharpQM, out sharpTr);
-            Vector3 sharpT = _node_Gmatrix.Translation.convertToVector3();
-            DualQuaternion DQW = new DualQuaternion(sharpQM, sharpT);
-            DQW.Normalize();
+            Matrix _node_matrix = _node_Gmatrix.convertTo();
+            Quaternion _node_Q;
+            Vector3 _node_S;
+            Vector3 _node_T;
+            _node_matrix.Decompose(out _node_S, out _node_Q, out _node_T);
+            Vector3 _node_T2 = _node_Gmatrix.Translation.convertToVector3();
+            DualQuaternion _node_DQ = new DualQuaternion(_node_Q, _node_T2);
+            _node_DQ.Normalize();
+
+            // node World Transform bind pose
+            IGMatrix _nodeB_Gmatrix = maxGlobal.GMatrix.Create();
+            Matrix _nodeB_matrix = _nodeB_Gmatrix.convertTo();
+            Quaternion _nodeB_Q;
+            Vector3 _nodeB_S;
+            Vector3 _nodeB_T;
+            _nodeB_matrix.Decompose(out _nodeB_S, out _nodeB_Q, out _nodeB_T);
+            Vector3 _nodeB_T2 = _nodeB_Gmatrix.Translation.convertToVector3();
+            DualQuaternion _nodeB_DQ = new DualQuaternion(_nodeB_Q, _nodeB_T2);
+            _nodeB_DQ.Normalize();
 
             // parent World Transform
-            IGMatrix _parent_Gmatrix = r.maxGlobal.GMatrix.Create();
+            IGMatrix _parent_Gmatrix = maxGlobal.GMatrix.Create();
             if (_parentGNode != null)
             {
                 _parent_Gmatrix = _parentGNode.GetWorldTM(_frame * _ticks_per_frame);
@@ -215,7 +226,7 @@ namespace ROD_Exporter
             DQPW.Normalize();
 
             // parent World Transform bind pose
-            IGMatrix _parent_GmatrixB = r.maxGlobal.GMatrix.Create();
+            IGMatrix _parent_GmatrixB = maxGlobal.GMatrix.Create();
             if (_parentGNode != null)
             {
                 _parent_GmatrixB = _parentGNode.GetWorldTM(0);
@@ -230,11 +241,19 @@ namespace ROD_Exporter
             DQPBW.Normalize();
 
             // 
-            DualQuaternion DQTemp = DQW * DualQuaternion.Conjugate(DQPW);
+            DualQuaternion DQTemp = _node_DQ * DualQuaternion.Conjugate(DQPW);
             DualQuaternion DQL = DQPBW * DQTemp * DualQuaternion.Conjugate(DQPBW);
             DQL.Normalize();
 
-            return DQL;
+
+            */
+            // node Local Transform
+            IGMatrix _node_LGmatrix = _GNode.GetLocalTM(_frame * _ticks_per_frame);
+            DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ();
+            _node_LDQ.Normalize();
+
+
+            return _node_LDQ;
         }
         
         public static void SetSemantic(Semantic _semantic)
@@ -520,7 +539,17 @@ namespace ROD_Exporter
         }
         public static Matrix convertTo(this IGMatrix _input)
         {
-            Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, 0, 0, 0, 1);
+            Matrix _output = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, _input.GetRow(3).X, _input.GetRow(3).Y, _input.GetRow(3).Z, 1);
+            return _output;
+        }
+        public static DualQuaternion convertToDQ(this IGMatrix _input)
+        {
+            Matrix _matrix = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, _input.GetRow(3).X, _input.GetRow(3).Y, _input.GetRow(3).Z, 1);
+            Quaternion _node_LQ;
+            Vector3 _node_LS;
+            Vector3 _node_LT;
+            _matrix.Decompose(out _node_LS, out _node_LQ, out _node_LT);
+            DualQuaternion _output = new DualQuaternion(_node_LQ, _node_LT);
             return _output;
         }
         public static Quaternion convertTo(this IQuat _input)
