@@ -124,7 +124,7 @@ namespace ROD_Exporter
                             Pose _pose = new Pose("frame" + _frames[f].ToString());
                             BuildLJoint(_bone, -1, _pose, _frames[f], bindPose);
                             clip.sequencesData.Add(_pose);
-                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 3));
+                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 30));
                         }
 
                         clip.saveToFile(_filename);
@@ -186,74 +186,14 @@ namespace ROD_Exporter
             IIGameNode _parentGNode = maxGlobal.IGameInterface.GetIGameNode(_parent_node);
             int _ticks_per_frame = maxGlobal.TicksPerFrame;
 
-
-            /*
-            // node World Transform
-            IGMatrix _node_Gmatrix = _GNode.GetWorldTM(_frame * _ticks_per_frame);
-            Matrix _node_matrix = _node_Gmatrix.convertTo();
-            Quaternion _node_Q;
-            Vector3 _node_S;
-            Vector3 _node_T;
-            _node_matrix.Decompose(out _node_S, out _node_Q, out _node_T);
-            Vector3 _node_T2 = _node_Gmatrix.Translation.convertToVector3();
-            DualQuaternion _node_DQ = new DualQuaternion(_node_Q, _node_T2);
-            _node_DQ.Normalize();
-
-            // node World Transform bind pose
-            IGMatrix _nodeB_Gmatrix = maxGlobal.GMatrix.Create();
-            Matrix _nodeB_matrix = _nodeB_Gmatrix.convertTo();
-            Quaternion _nodeB_Q;
-            Vector3 _nodeB_S;
-            Vector3 _nodeB_T;
-            _nodeB_matrix.Decompose(out _nodeB_S, out _nodeB_Q, out _nodeB_T);
-            Vector3 _nodeB_T2 = _nodeB_Gmatrix.Translation.convertToVector3();
-            DualQuaternion _nodeB_DQ = new DualQuaternion(_nodeB_Q, _nodeB_T2);
-            _nodeB_DQ.Normalize();
-
-            // parent World Transform
-            IGMatrix _parent_Gmatrix = maxGlobal.GMatrix.Create();
-            if (_parentGNode != null)
-            {
-                _parent_Gmatrix = _parentGNode.GetWorldTM(_frame * _ticks_per_frame);
-            }
-            Matrix sharpP = _parent_Gmatrix.convertTo();
-            Quaternion sharpQP;
-            Vector3 sharpScP;
-            Vector3 sharpTrP;
-            sharpP.Decompose(out sharpScP, out sharpQP, out sharpTrP);
-            Vector3 sharpTP = _parent_Gmatrix.Translation.convertToVector3();
-            DualQuaternion DQPW = new DualQuaternion(sharpQP, sharpTP);
-            DQPW.Normalize();
-
-            // parent World Transform bind pose
-            IGMatrix _parent_GmatrixB = maxGlobal.GMatrix.Create();
-            if (_parentGNode != null)
-            {
-                _parent_GmatrixB = _parentGNode.GetWorldTM(0);
-            }
-            Matrix sharpPB = _parent_Gmatrix.convertTo();
-            Quaternion sharpQPB;
-            Vector3 sharpScPB;
-            Vector3 sharpTrPB;
-            sharpPB.Decompose(out sharpScPB, out sharpQPB, out sharpTrPB);
-            Vector3 sharpTPB = _parent_Gmatrix.Translation.convertToVector3();
-            DualQuaternion DQPBW = new DualQuaternion(sharpQPB, sharpTPB);
-            DQPBW.Normalize();
-
-            // 
-            DualQuaternion DQTemp = _node_DQ * DualQuaternion.Conjugate(DQPW);
-            DualQuaternion DQL = DQPBW * DQTemp * DualQuaternion.Conjugate(DQPBW);
-            DQL.Normalize();
-
-
-            */
             // node Local Transform
             IGMatrix _node_LGmatrix = _GNode.GetLocalTM(_frame * _ticks_per_frame);
             DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ();
-            _node_LDQ.Normalize();
+            IGMatrix _node_BLGmatrix = _GNode.GetLocalTM(0);
+            DualQuaternion _node_BLDQ = _node_BLGmatrix.convertToDQ();
+            DualQuaternion _node_LTDQL = _node_LDQ * DualQuaternion.Conjugate(_node_BLDQ);
 
-
-            return _node_LDQ;
+            return _node_LTDQL;
         }
         
         public static void SetSemantic(Semantic _semantic)
