@@ -150,9 +150,8 @@ namespace ROD_Exporter
 
         public static void BuildLJoint(IINode _node, int _parentId, Pose _pose, int _frame, Pose _bindPose)
         {
-            DualQuaternion WDQ = GetBoneWorldDQ(_node, _frame);
             DualQuaternion LDQ = GetBoneLocalDQ(_node, _frame);
-            Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, WDQ, LDQ);
+            Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, DualQuaternion.Identity, LDQ);
             _pose.joints.Add(_joint);
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
@@ -188,9 +187,11 @@ namespace ROD_Exporter
 
             // node Local Transform
             IGMatrix _node_LGmatrix = _GNode.GetLocalTM(_frame * _ticks_per_frame);
-            DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ();
+            DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ(Transformation.Rotation);
+            _node_LDQ.Normalize();
             IGMatrix _node_BLGmatrix = _GNode.GetLocalTM(0);
-            DualQuaternion _node_BLDQ = _node_BLGmatrix.convertToDQ();
+            DualQuaternion _node_BLDQ = _node_BLGmatrix.convertToDQ(Transformation.Rotation);
+            _node_BLDQ.Normalize();
             DualQuaternion _node_LTDQL = _node_LDQ * DualQuaternion.Conjugate(_node_BLDQ);
 
             return _node_LTDQL;
@@ -457,8 +458,15 @@ namespace ROD_Exporter
         public Vector4 bonesWeights;
     }
 
-    
 
+    public enum Transformation
+    {
+        None  = (1 << 0),
+        Rotation = (1 << 1),
+        Translation = (1 << 2),
+        Scaling = (1 << 3),
+        All = Rotation | Translation | Scaling
+    }
 
     public static class maxHelper
     {
@@ -490,6 +498,28 @@ namespace ROD_Exporter
             Vector3 _node_LT;
             _matrix.Decompose(out _node_LS, out _node_LQ, out _node_LT);
             DualQuaternion _output = new DualQuaternion(_node_LQ, _node_LT);
+            return _output;
+        }
+        public static DualQuaternion convertToDQ(this IGMatrix _input, Transformation _transformation)
+        {
+            Matrix _matrix = new Matrix(_input.GetRow(0).X, _input.GetRow(0).Y, _input.GetRow(0).Z, 0, _input.GetRow(1).X, _input.GetRow(1).Y, _input.GetRow(1).Z, 0, _input.GetRow(2).X, _input.GetRow(2).Y, _input.GetRow(2).Z, 0, _input.GetRow(3).X, _input.GetRow(3).Y, _input.GetRow(3).Z, 1);
+            Quaternion _node_LQ;
+            Vector3 _node_LS;
+            Vector3 _node_LT;
+            _matrix.Decompose(out _node_LS, out _node_LQ, out _node_LT);
+            DualQuaternion _output = DualQuaternion.Identity;
+            if (_transformation == Transformation.All)
+            {
+                _output = new DualQuaternion(_node_LQ, _node_LT);
+            }
+            if (_transformation == Transformation.Rotation)
+            {
+                _output = new DualQuaternion(_node_LQ, Vector3.Zero);
+            }
+            if (_transformation == Transformation.Translation)
+            {
+                _output = new DualQuaternion(Quaternion.Identity, _node_LT);
+            }
             return _output;
         }
         public static Quaternion convertTo(this IQuat _input)
