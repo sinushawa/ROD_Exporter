@@ -16,6 +16,8 @@ using Joint=ROD_core.Graphics.Animation.Joint;
 using Skeleton = ROD_core.Graphics.Animation.Skeleton;
 using DualQuaternion = ROD_core.Mathematics.DualQuaternion;
 using CurveHandle = ROD_core.Graphics.Animation.CurveHandle;
+using BezierCurveFitting;
+using MoreLinq;
 
 namespace ROD_Exporter
 {
@@ -186,7 +188,7 @@ namespace ROD_Exporter
         {
             DualQuaternion LDQ = GetBoneLocalDQ(_node, _frames, _f);
             CurveHandle curve = GetCurve(_node, _frames, _f, _samplingRate);
-            Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, DualQuaternion.Identity, LDQ);
+            Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, DualQuaternion.Identity, LDQ, curve);
             _pose.joints.Add(_joint);
             int childrensNb = _node.NumberOfChildren;
             for (int i = 0; i < childrensNb; i++)
@@ -233,21 +235,49 @@ namespace ROD_Exporter
         }
         public static CurveHandle GetCurve(IINode _node, int[] _frames, int _f, int _samplingRate)
         {
-            IIGameNode _GNode = maxGlobal.IGameInterface.GetIGameNode(_node);
             CurveHandle result = new CurveHandle(Vector2.Zero, Vector2.Zero);
-            List<Vector3> _samples = new List<Vector3>();
+            IIGameNode _GNode = maxGlobal.IGameInterface.GetIGameNode(_node);
             int _ticks_per_frame = maxGlobal.TicksPerFrame;
-            if (_f < _frames.Length)
+            if (_f>0)
             {
-                int firstHalfStart = _frames[_f - 1] + (_frames[_f] - _frames[_f - 1]) / 2;
-                for (int i = firstHalfStart; i <= _frames[_f]; i += _samplingRate)
+                List<Vector3> _samples = new List<Vector3>();
+                int nb_of_frames = _frames[_f ] - _frames[_f-1];
+                for (int i =  _frames[_f-1]; i <= _frames[_f]; i += _samplingRate)
                 {
+                    float proportion = 1.0f - ((_frames[_f] - i) / (float)(nb_of_frames));
                     IGMatrix _node_LGmatrix = _GNode.GetLocalTM(i * _ticks_per_frame);
                     DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ(Transformation.Rotation);
-                    _samples.Add(new Vector3());
+                    _samples.Add(new Vector3(proportion, _node_LDQ.RollPitchYaw.X+_node_LDQ.RollPitchYaw.Y+_node_LDQ.RollPitchYaw.Z,0));
                 }
+                List<BezierCurveFitting.BezierPoint> points = BezierCurveFitting.FitCurves.FitCurveBy(BezierCurveFitting.Method.Length, _samples.ToArray(), 0.01f, 2);
+                float delta = points[1].point.Y - points[0].point.Y;
+                float _max = Math.Max(points[1].point.Y, points[0].point.Y);
+                result.easeIn = new Vector2(points[0].point.X, Math.Abs((_max - points[0].afterHandle.Value.Y) / delta));
             }
-
+            else if (_f == 0)
+            {
+                result.easeIn = new Vector2(0.0f, 0.0f);
+            }
+            if (_f < _frames.Length)
+            {
+                List<Vector3> _samples = new List<Vector3>();
+                int nb_of_frames = _frames[_f+1] - _frames[_f];
+                for (int i = _frames[_f]; i <= _frames[_f+1]; i += _samplingRate)
+                {
+                    float proportion = 1.0f - ((_frames[_f+1] - i) / (float)(nb_of_frames));
+                    IGMatrix _node_LGmatrix = _GNode.GetLocalTM(i * _ticks_per_frame);
+                    DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ(Transformation.Rotation);
+                    _samples.Add(new Vector3(proportion, _node_LDQ.RollPitchYaw.X + _node_LDQ.RollPitchYaw.Y + _node_LDQ.RollPitchYaw.Z, 0));
+                }
+                List<BezierCurveFitting.BezierPoint> points = BezierCurveFitting.FitCurves.FitCurveBy(BezierCurveFitting.Method.Length, _samples.ToArray(), 0.01f, 2);
+                float delta = points[1].point.Y - points[0].point.Y;
+                float _max = Math.Max(points[1].point.Y, points[0].point.Y);
+                result.easeOut = new Vector2(points[1].point.X, Math.Abs((_max - points[1].foreHandle.Value.Y) / delta));
+            }
+            else if (_f == _frames.Length)
+            {
+                result.easeOut = new Vector2(1f, 1f);
+            }
             return result;
         }
         
