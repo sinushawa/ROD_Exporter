@@ -35,6 +35,9 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>E:\Program Files\Autodesk\3ds Max 2013\Autodesk.Max.dll</HintPath>
     </Reference>
+    <Reference Include="BezierCurveFitting">
+      <HintPath>..\..\BezierCurveFitting\BezierCurveFitting\bin\Debug\BezierCurveFitting.dll</HintPath>
+    </Reference>
     <Reference Include="SharpDX, Version=2.4.1.0, Culture=neutral, PublicKeyToken=627a3d6d1956f55a, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>E:\Documents\Projects\C# ressources\SharpDXDev\Bin\Standard-net40\SharpDX.dll</HintPath>

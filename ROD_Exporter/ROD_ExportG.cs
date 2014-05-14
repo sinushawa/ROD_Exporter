@@ -15,6 +15,7 @@ using Pose = ROD_core.Graphics.Animation.Pose;
 using Joint=ROD_core.Graphics.Animation.Joint;
 using Skeleton = ROD_core.Graphics.Animation.Skeleton;
 using DualQuaternion = ROD_core.Mathematics.DualQuaternion;
+using CurveHandle = ROD_core.Graphics.Animation.CurveHandle;
 
 namespace ROD_Exporter
 {
@@ -80,8 +81,44 @@ namespace ROD_Exporter
             }
             return true;
         }
-        
-        public static bool Bone_To(int[] _frames, string _filename, string _filenameSkeleton)
+        public static bool ExportSkeleton(string _filenameSkeleton)
+        {
+            List<IINode> nodes = GetSelection();
+
+            foreach (IINode _node in nodes)
+            {
+                IIDerivedObject theObj = (IIDerivedObject)_node.ObjectRef;
+                IInterval interval = maxGlobal.Interval.Create();
+                interval.SetInfinite();
+                maxGlobal.IGameInterface.InitialiseIGame(false);
+                for (int m = 0; m < theObj.Modifiers.Count; m++)
+                {
+                    IModifier theModifier = theObj.GetModifier(m);
+                    if (theModifier.ClassName == "Skin")
+                    {
+
+                        IISkin _skin = (IISkin)theModifier.GetInterface((InterfaceID)(0x00010000));
+                        IINode _bone = _skin.GetBone(0);
+
+                        int nbBones = _skin.NumBones;
+                        List<string> boneName = new List<string>();
+                        for (int b = 0; b < nbBones; b++)
+                        {
+                            boneName.Add(_skin.GetBone(b).Name);
+                        }
+                        #region create bindPose World
+                        Pose bindPose = new Pose("bindPose");
+                        BuildBind(_bone, -1, bindPose);
+                        #endregion
+
+                        Skeleton skelete = new Skeleton("skelete", bindPose);
+                        skelete.saveToFile(_filenameSkeleton);
+                    }
+                }
+            }
+            return true;
+        }
+        public static bool ExportAnimation(int[] _frames, string _filename, int _samplingRate)
         {
 
             List<IINode> nodes = GetSelection();
@@ -112,9 +149,6 @@ namespace ROD_Exporter
                         BuildBind(_bone, -1, bindPose);
                         #endregion
 
-                        Skeleton skelete = new Skeleton("skelete", bindPose);
-                        skelete.saveToFile(_filenameSkeleton);
-
                         ROD_core.Graphics.Animation.Clip_Skinning clip = new ROD_core.Graphics.Animation.Clip_Skinning();
                         clip.sequencesData = new List<Pose>();
                         clip.sequencesTiming = new List<TimeSpan>();
@@ -122,9 +156,9 @@ namespace ROD_Exporter
                         {
                             // create Pose at frame (_frame)
                             Pose _pose = new Pose("frame" + _frames[f].ToString());
-                            BuildLJoint(_bone, -1, _pose, _frames[f], bindPose);
+                            BuildLJoint(_bone, -1, _pose, _frames, f, _samplingRate, bindPose);
                             clip.sequencesData.Add(_pose);
-                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / 30));
+                            clip.sequencesTiming.Add(TimeSpan.FromSeconds(_frames[f] / maxGlobal.TicksPerFrame));
                         }
 
                         clip.saveToFile(_filename);
@@ -148,9 +182,10 @@ namespace ROD_Exporter
             }
         }
 
-        public static void BuildLJoint(IINode _node, int _parentId, Pose _pose, int _frame, Pose _bindPose)
+        public static void BuildLJoint(IINode _node, int _parentId, Pose _pose,int[] _frames, int _f, int _samplingRate, Pose _bindPose)
         {
-            DualQuaternion LDQ = GetBoneLocalDQ(_node, _frame);
+            DualQuaternion LDQ = GetBoneLocalDQ(_node, _frames, _f);
+            CurveHandle curve = GetCurve(_node, _frames, _f, _samplingRate);
             Joint _joint = new Joint(_pose.joints.Count, _node.Name, _parentId, DualQuaternion.Identity, LDQ);
             _pose.joints.Add(_joint);
             int childrensNb = _node.NumberOfChildren;
@@ -158,7 +193,7 @@ namespace ROD_Exporter
             {
                 if (!_node.GetChildNode(i).Name.EndsWith("Nub"))
                 {
-                    BuildLJoint(_node.GetChildNode(i), _joint.id, _pose, _frame, _bindPose);
+                    BuildLJoint(_node.GetChildNode(i), _joint.id, _pose, _frames, _f, _samplingRate, _bindPose);
                 }
             }
         }
@@ -178,7 +213,7 @@ namespace ROD_Exporter
 
             return DQ;
         }
-        public static DualQuaternion GetBoneLocalDQ(IINode _node, int _frame)
+        public static DualQuaternion GetBoneLocalDQ(IINode _node,int[] _frames, int _f)
         {
             IINode _parent_node = _node.ParentNode;
             IIGameNode _GNode = maxGlobal.IGameInterface.GetIGameNode(_node);
@@ -186,7 +221,7 @@ namespace ROD_Exporter
             int _ticks_per_frame = maxGlobal.TicksPerFrame;
 
             // node Local Transform
-            IGMatrix _node_LGmatrix = _GNode.GetLocalTM(_frame * _ticks_per_frame);
+            IGMatrix _node_LGmatrix = _GNode.GetLocalTM(_frames[_f] * _ticks_per_frame);
             DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ(Transformation.Rotation);
             _node_LDQ.Normalize();
             IGMatrix _node_BLGmatrix = _GNode.GetLocalTM(0);
@@ -195,6 +230,25 @@ namespace ROD_Exporter
             DualQuaternion _node_LTDQL = _node_LDQ * DualQuaternion.Conjugate(_node_BLDQ);
 
             return _node_LTDQL;
+        }
+        public static CurveHandle GetCurve(IINode _node, int[] _frames, int _f, int _samplingRate)
+        {
+            IIGameNode _GNode = maxGlobal.IGameInterface.GetIGameNode(_node);
+            CurveHandle result = new CurveHandle(Vector2.Zero, Vector2.Zero);
+            List<Vector3> _samples = new List<Vector3>();
+            int _ticks_per_frame = maxGlobal.TicksPerFrame;
+            if (_f < _frames.Length)
+            {
+                int firstHalfStart = _frames[_f - 1] + (_frames[_f] - _frames[_f - 1]) / 2;
+                for (int i = firstHalfStart; i <= _frames[_f]; i += _samplingRate)
+                {
+                    IGMatrix _node_LGmatrix = _GNode.GetLocalTM(i * _ticks_per_frame);
+                    DualQuaternion _node_LDQ = _node_LGmatrix.convertToDQ(Transformation.Rotation);
+                    _samples.Add(new Vector3());
+                }
+            }
+
+            return result;
         }
         
         public static void SetSemantic(Semantic _semantic)
