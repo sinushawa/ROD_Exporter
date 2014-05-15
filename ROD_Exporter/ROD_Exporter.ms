@@ -1,8 +1,8 @@
 AppDomain = dotNetClass "System.AppDomain"
 Assembly = dotNetClass "System.Reflection.Assembly"
 AssemblyName = dotNetClass "System.Reflection.AssemblyName"
---exporter_path = @"C:\Users\JLatteux\Documents\GitHub\ROD_Exporter\ROD_Exporter\bin\Debug\ROD_Exporter.dll"
-exporter_path = @"E:\Documents\Projects\GitHub\ROD_Exporter\ROD_Exporter\bin\Debug\ROD_Exporter.dll"
+exporter_path = @"C:\Users\JLatteux\Documents\GitHub\ROD_Exporter\ROD_Exporter\bin\Debug\ROD_Exporter.dll"
+--exporter_path = @"E:\Documents\Projects\GitHub\ROD_Exporter\ROD_Exporter\bin\Debug\ROD_Exporter.dll"
 assemName = AssemblyName.GetAssemblyName(exporter_path)
 assem = Assembly.Load assemName
 exporter = assem.CreateInstance "ROD_Exporter.ROD_ExportG"
